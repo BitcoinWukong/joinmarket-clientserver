@@ -140,16 +140,14 @@ class Storage(object):
         return os.path.join(path_head, '.' + path_tail + '.lock')
 
     @classmethod
-    def check_file_not_locked(cls, path):
+    def get_file_locking_status(cls, path):
         lock_filename = cls._lock_filename(path)
         if os.path.exists(lock_filename):
             with open(lock_filename, 'r') as f:
                 locked_by_pid = f.read()
-            raise RetryableStorageError(
-                               "File is currently in use (locked by pid {}). "
-                               "If this is a leftover from a crashed instance "
-                               "you need to remove the lock file `{}` manually." .
-                               format(locked_by_pid, lock_filename))
+            return (lock_filename, locked_by_pid)
+        else:
+            return (lock_filename, None)
 
     @classmethod
     def is_storage_file(cls, path):
@@ -300,8 +298,15 @@ class Storage(object):
         if self.read_only:
             return
 
-        self.check_file_not_locked(self.path)
-        self._lock_file = self._lock_filename(self.path)
+        (lock_filename, locked_by_pid) = self.get_file_locking_status(self.path)
+        if locked_by_pid is not None:
+            raise RetryableStorageError(
+                               "File is currently in use (locked by pid {}). "
+                               "If this is a leftover from a crashed instance "
+                               "you need to remove the lock file `{}` manually." .
+                               format(locked_by_pid, lock_filename))
+
+        self._lock_file = lock_filename
         
         #FIXME: in python >=3.3 use mode x
         with open(self._lock_file, 'w') as f:
