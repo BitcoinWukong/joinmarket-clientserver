@@ -1609,8 +1609,6 @@ class JMMainWindow(QMainWindow):
         default_height = 800
 
         desktop_rect = QDesktopWidget().availableGeometry()
-        print(desktop_rect.width())
-        print(desktop_rect.height())
         self.resize(
             default_width if default_width < desktop_rect.width() - 100 else desktop_rect.width() - 100,
             default_height if default_height < desktop_rect.height() - 100 else desktop_rect.height() - 100
