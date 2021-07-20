@@ -1604,7 +1604,7 @@ class JMMainWindow(QMainWindow):
             event.ignore()
 
     def resizeAndCenter(self):
-        # Resize the widow base on the desktop size
+        # Resize the window base on the desktop size
         default_width = 1000
         default_height = 800
 
