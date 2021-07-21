@@ -1429,8 +1429,9 @@ class JMWalletTab(QWidget):
             self)
         self.label1.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
         v = MyTreeWidget(self, self.create_menu, self.getHeaders())
-        v.header().resizeSection(0, 400)    # size of "Address" column
-        v.header().resizeSection(1, 130)    # size of "Index" column
+        v.header().resizeSection(0, 650)    # size of "Address" column
+        v.header().resizeSection(1, 250)    # size of "Index" column
+        v.header().resizeSection(3, 160)    # size of "Notes" column
         v.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.on_update = self.updateWalletInfo
         v.hide()
@@ -1448,7 +1449,7 @@ class JMWalletTab(QWidget):
 
     def getHeaders(self):
         '''Function included in case dynamic in future'''
-        return ['Address', 'Index', 'Balance', 'Used/New']
+        return ['Address', 'Index', 'Balance', 'Notes']
 
     def create_menu(self, position):
         item = self.walletTree.currentItem()
@@ -1616,8 +1617,8 @@ class JMMainWindow(QMainWindow):
 
     def resizeAndCenter(self):
         # Resize the window base on the desktop size
-        default_width = 1000
-        default_height = 800
+        default_width = 1200
+        default_height = 900
 
         desktop_rect = QDesktopWidget().availableGeometry()
         self.resize(
