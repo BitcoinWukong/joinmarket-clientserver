@@ -1626,11 +1626,6 @@ class JMMainWindow(QMainWindow):
             default_height if default_height < desktop_rect.height() - 100 else desktop_rect.height() - 100
         )
 
-        # Center the window
-        window_rect = self.frameGeometry()
-        window_rect.moveCenter(desktop_rect.center())
-        self.move(window_rect.topLeft())
-
     def initUI(self):
         self.statusBar().showMessage("Ready")
         self.resizeAndCenter()
