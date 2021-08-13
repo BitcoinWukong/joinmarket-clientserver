@@ -20,9 +20,15 @@ jlog = get_log()
 
 class YieldGeneratorPrivacyEnhanced(YieldGeneratorBasic):
 
+<<<<<<< HEAD
     def __init__(self, wallet_service, offerconfig):
         super().__init__(wallet_service, offerconfig)
 
+=======
+    def __init__(self, wallet_service, offerconfig, cswallet_service, csconfig):
+        super().__init__(wallet_service, offerconfig, cswallet_service, csconfig)
+        
+>>>>>>> ecf8b28... Send coin join output to an external cold storage wallet
     def select_input_mixdepth(self, available, offer, amount):
         """Mixdepths are in cyclic order and we select the mixdepth to
         maximize the largest interval of non-available mixdepths by choosing
