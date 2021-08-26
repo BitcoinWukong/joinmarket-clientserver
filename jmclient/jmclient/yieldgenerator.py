@@ -293,7 +293,7 @@ class YieldGeneratorBasic(YieldGenerator):
                 return False
             else:
                 jlog.info("sending coin join output to cold storage wallet {}".format(
-                    self.cswallet_service.get_wallet_name()))
+                    self.cswallet_service.wallet.get_wallet_name()))
                 return True
         except Exception as e:
             jlog.error('Something went wrong in should_use_cswallet:' + repr(e))
