@@ -304,14 +304,13 @@ class YieldGeneratorBasic(YieldGenerator):
         an order spending from the given input mixdepth.  Can return None if
         there is no suitable output, in which case the order is
         aborted."""
-        cjoutmix = (input_mixdepth + 1) % (self.wallet_service.mixdepth + 1)
-
-        # TODO: Actually use the cold storage wallet's address
         if self.should_use_cswallet(input_mixdepth, amount):
             output_address = self.cswallet_service.get_internal_addr(WatchonlyMixin.WATCH_ONLY_MIXDEPTH)
             jlog.info("Sending coin join output to cold storage wallet addr {}".format(output_address))
-
-        return self.wallet_service.get_internal_addr(cjoutmix)
+            return output_address
+        else:
+            cjoutmix = (input_mixdepth + 1) % (self.wallet_service.mixdepth + 1)
+            return self.wallet_service.get_internal_addr(cjoutmix)
 
 
 def ygmain(ygclass, nickserv_password='', gaplimit=6):
