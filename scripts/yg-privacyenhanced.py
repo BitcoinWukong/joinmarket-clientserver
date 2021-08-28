@@ -76,14 +76,18 @@ class YieldGeneratorPrivacyEnhanced(YieldGeneratorBasic):
         randomize_maxsize = int(random.uniform(possible_maxsize * (1 - float(self.size_factor)),
                                                possible_maxsize))
 
+        # Small order cjfee is 150x of the normal order
         if self.ordertype in ['swabsoffer', 'sw0absoffer']:
             randomize_cjfee = int(random.uniform(float(self.cjfee_a) * (1 - float(self.cjfee_factor)),
                                                  float(self.cjfee_a) * (1 + float(self.cjfee_factor))))
             randomize_cjfee = randomize_cjfee + randomize_txfee
+            so_randomize_cjfee = randomize_cjfee * 150
         else:
             randomize_cjfee = random.uniform(float(f) * (1 - float(self.cjfee_factor)),
                                              float(f) * (1 + float(self.cjfee_factor)))
+            so_randomize_cjfee = randomize_cjfee * 150
             randomize_cjfee = "{0:.6f}".format(randomize_cjfee)  # round to 6 decimals
+            so_randomize_cjfee = "{0:.6f}".format(so_randomize_cjfee)  # round to 6 decimals
 
         order = {'oid': 0,
                  'ordertype': self.ordertype,
@@ -104,7 +108,29 @@ class YieldGeneratorPrivacyEnhanced(YieldGeneratorBasic):
             else:
                 jlog.error("Tx fee reduction algorithm failed. Quitting.")
                 sys.exit(EXIT_ARGERROR)
-        return [order]
+
+        # A secondary order covering smaller cj transactions but with much higher fee (150x)
+        small_order = {'oid': 1,
+                 'ordertype': self.ordertype,
+                 'minsize': 100000,
+                 'maxsize': randomize_minsize - 1,
+                 'txfee': randomize_txfee,
+                 'cjfee': str(so_randomize_cjfee)}
+
+        # sanity check
+        assert small_order['minsize'] >= jm_single().DUST_THRESHOLD
+        assert small_order['minsize'] <= small_order['maxsize']
+        if small_order['ordertype'] in ['swreloffer', 'sw0reloffer']:
+            for i in range(20):
+                if small_order['txfee'] < (float(small_order['cjfee']) * small_order['minsize']):
+                    break
+                small_order['txfee'] = int(small_order['txfee'] / 2)
+                jlog.info('Warning: too high txfee to be profitable, halving it to: ' + str(small_order['txfee']))
+            else:
+                jlog.error("Tx fee reduction algorithm failed. Quitting.")
+                sys.exit(EXIT_ARGERROR)
+        
+        return [order, small_order]
 
 
 if __name__ == "__main__":
