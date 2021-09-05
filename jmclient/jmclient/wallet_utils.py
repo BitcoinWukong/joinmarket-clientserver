@@ -143,8 +143,16 @@ class WalletViewBase(object):
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return sum([x.get_balance() for x in self.children])
 
+    def get_unlocked_balance(self):
+        return sum([x.get_unlocked_balance() for x in self.children])
+
     def get_fmt_balance(self, include_unconf=True):
-        return "{0:.08f}".format(self.get_balance(include_unconf))
+        unlocked_balance = self.get_unlocked_balance()
+        total_balance = self.get_balance(include_unconf)
+        if unlocked_balance != total_balance:
+            return "{0:.08f} ({1:.08f})".format(unlocked_balance, total_balance)
+        else:
+            return "{0:.08f}".format(total_balance)
 
 class WalletViewEntry(WalletViewBase):
     def __init__(self, wallet_path_repr, account, address_type, aindex, addr, amounts,
@@ -165,12 +173,18 @@ class WalletViewEntry(WalletViewBase):
         self.private_key = priv
         self.used = used
 
+    def is_locked(self):
+        return "[LOCKED]" in self.used
+
     def get_balance(self, include_unconf=True):
         """Overwrites base class since no children
         """
         if not include_unconf:
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return self.unconfirmed_amount/1e8
+
+    def get_unlocked_balance(self, include_unconf=True):
+        return 0 if self.is_locked() else self.get_balance()
 
     def serialize(self):
         left = self.serialize_wallet_position()
