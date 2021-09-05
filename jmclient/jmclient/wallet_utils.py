@@ -177,6 +177,9 @@ class WalletViewEntry(WalletViewBase):
     def is_frozen(self):
         return "[FROZEN]" in self.used
 
+    def is_pending(self):
+        return "[PENDING]" in self.used
+
     def get_balance(self, include_unconf=True):
         """Overwrites base class since no children
         """
@@ -185,7 +188,7 @@ class WalletViewEntry(WalletViewBase):
         return self.unconfirmed_amount/1e8
 
     def get_available_balance(self, include_unconf=True):
-        return 0 if self.is_locked() or self.is_frozen() else self.get_balance()
+        return 0 if self.is_locked() or self.is_frozen() or self.is_pending() else self.get_balance()
 
     def serialize(self):
         left = self.serialize_wallet_position()
@@ -419,12 +422,15 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
         addr_balance = 0
         status = []
         has_frozen_utxo = False
+        has_pending_utxo = False
         for utxo, utxodata in utxos.items():
             if addr_path != utxodata['path']:
                 continue
             addr_balance += utxodata['value']
             if utxo not in utxos_enabled:
                 has_frozen_utxo = True
+            if utxodata['confs'] <= 0:
+                has_pending_utxo = True
 
             #TODO it is a failure of abstraction here that
             # the bitcoin core interface is used directly
@@ -451,12 +457,14 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
 
         if has_frozen_utxo:
             out_status += ' [FROZEN]'
+        if has_pending_utxo:
+            out_status += ' [PENDING]'
 
         return addr_balance, out_status
 
     acctlist = []
 
-    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True)
+    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True, includeconfs=True)
     utxos_enabled = wallet_service.get_utxos_by_mixdepth()
 
     if mixdepth:
@@ -506,16 +514,21 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
 
                 balance = 0
                 has_frozen_utxo = False
+                has_pending_utxo = False
                 for utxo, utxodata in utxos[m].items():
                     if path == utxodata["path"]:
                         balance += utxodata["value"]
                         if not utxo in utxos_enabled[m]:
                             has_frozen_utxo = True
+                        if utxodata['confs'] <= 0:
+                            has_pending_utxo = True
 
                 status = timelock.strftime("%Y-%m-%d") + " [" + (
                     "LOCKED" if datetime.now() < timelock else "UNLOCKED") + "]"
                 if has_frozen_utxo:
                     status += ' [FROZEN]'
+                if has_pending_utxo:
+                    status += ' [PENDING]'
                 
                 privkey = ""
                 if showprivkey:
