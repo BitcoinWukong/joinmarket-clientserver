@@ -1478,6 +1478,8 @@ class JMWalletTab(QWidget):
             menu.addAction("Copy extended public key to clipboard",
                            lambda: app.clipboard().setText(xpub),
                            shortcut=QKeySequence(QKeySequence.Copy))
+        menu.addAction("Refresh Wallet",
+                       lambda: mainWindow.updateWalletInfo(None, "all"))
         #TODO add more items to context menu
         if address_valid or xpub_exists:
             menu.exec_(self.walletTree.viewport().mapToGlobal(position))
