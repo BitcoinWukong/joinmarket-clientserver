@@ -44,7 +44,7 @@ class YieldGeneratorPrivacyEnhanced(YieldGeneratorBasic):
         # available mixdepths ends. Selecting this mixdepth will send the CoinJoin
         # outputs closer to the others available mixdepths which are after in cyclical order
         return available[max(range(len(available)), key = intervals.__getitem__)]
-    
+
     def create_my_orders(self):
         mix_balance = self.get_available_mixdepths()
         # We publish ONLY the maximum amount and use minsize for lower bound;

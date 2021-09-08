@@ -163,7 +163,7 @@ socks5_port = 9050
 #socks5_port = 9050
 #
 ##for tor
-##host = agora3cdw6kdty5y.onion
+##host = vxecvd6lc4giwtasjhgbrr3eop6pzq6i5rveracktioneunalgqlwfad.onion
 ##port = 6667
 ##usessl = false
 ##socks5 = true
@@ -492,15 +492,6 @@ def _get_irc_mchannels_old():
         newconfig['btcnet'] = get_network()
         configs.append(newconfig)
     return configs
-
-
-def get_config_irc_channel(channel_name):
-    channel = "#" + channel_name
-    if get_network() == 'testnet':
-        channel += '-test'
-    elif get_network() == 'signet':
-        channel += '-sig'
-    return channel
 
 class JMPluginService(object):
     """ Allows us to configure on-startup
