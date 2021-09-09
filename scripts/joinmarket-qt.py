@@ -2355,8 +2355,8 @@ def onTabChange(i):
     # TODO: hardcoded literal;
     # note that this is needed for an auto-update
     # of utxos on the Coins tab only atm.
-    if i == 3:
-        tabWidget.widget(3).updateUtxos()
+    if i == 2:
+        tabWidget.widget(2).updateUtxos()
 
 #to allow testing of confirm/unconfirm callback for multiple txs
 if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
@@ -2376,9 +2376,9 @@ from twisted.internet import reactor
 mainWindow = JMMainWindow(reactor)
 tabWidget = QTabWidget(mainWindow)
 tabWidget.addTab(JMWalletTab(), "JM Wallet")
-tabWidget.addTab(TxHistoryTab(), "Tx History")
 tabWidget.addTab(SpendTab(), "Coinjoins")
 tabWidget.addTab(CoinsTab(), "Coins")
+tabWidget.addTab(TxHistoryTab(), "Tx History")
 settingsTab = SettingsTab()
 tabWidget.addTab(settingsTab, "Settings")
 
