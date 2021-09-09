@@ -81,15 +81,15 @@ class YieldGeneratorBasic(YieldGenerator):
     It will often (but not always) reannounce orders after transactions,
     thus is somewhat suboptimal in giving more information to spies.
     """
-    def __init__(self, wallet_service, offerconfig, cswallet_service, csconfig):
+    def __init__(self, wallet_service, offerconfig, cswallet_service = None, csconfig = None):
         # note the randomizing entries are ignored in this base class:
         self.txfee, self.cjfee_a, self.cjfee_r, self.ordertype, self.minsize, \
             self.txfee_factor, self.cjfee_factor, self.size_factor = offerconfig
         
         if cswallet_service:
             assert isinstance(cswallet_service, WalletService)
+            self.cs_min_balance, self.cs_min_txsize, self.cs_mixdepth = csconfig
         self.cswallet_service = cswallet_service
-        self.cs_min_balance, self.cs_min_txsize, self.cs_mixdepth = csconfig
         
         super().__init__(wallet_service)
 
@@ -263,41 +263,29 @@ class YieldGeneratorBasic(YieldGenerator):
         return available[0][0]
 
     def should_use_cswallet(self, input_mixdepth, amount):
-        # TODO: Remove the overall try-except
-        try:
-            if not self.cswallet_service:
-                return False
-
-            # TODO: Replace all jlog.info here with jlog.debug
-            if input_mixdepth != self.cs_mixdepth:
-                jlog.info("input mixdepth {} dosen't match cs_mixdepth {}".format(
-                    input_mixdepth, self.cs_mixdepth))
-                return False
-
-            if amount < self.cs_min_txsize:
-                jlog.info("coin join size {} is less than cs_min_txsize {}".format(
-                    amount, self.cs_min_txsize))
-                return False
-
-            # Get the total balance of the wallet
-            total_balance = 0
-            balance_by_mixdepth = self.wallet_service.get_balance_by_mixdepth()
-            jlog.info("balance_by_mixdepth: " + str(balance_by_mixdepth))
-            for i in range(5):
-                total_balance += balance_by_mixdepth[i]
-
-            # Check if the wallet balance can maintain the min balance after this coin join
-            if total_balance - amount < self.cs_min_balance:
-                jlog.info("total_balance - amount {} is less than cs_min_balance {}".format(
-                    total_balance - amount, self.cs_min_balance))
-                return False
-            else:
-                jlog.info("sending coin join output to cold storage wallet {}".format(
-                    self.cswallet_service.get_wallet_name()))
-                return True
-        except Exception as e:
-            jlog.error('Something went wrong in should_use_cswallet:' + repr(e))
+        if not self.cswallet_service:
             return False
+
+        if input_mixdepth != self.cs_mixdepth:
+            jlog.debug("input mixdepth {} dosen't match cs_mixdepth {}".format(
+                input_mixdepth, self.cs_mixdepth))
+            return False
+
+        if amount < self.cs_min_txsize:
+            jlog.debug("coin join size {} is less than cs_min_txsize {}".format(
+                amount, self.cs_min_txsize))
+            return False
+
+        # Check if the wallet balance can maintain the min balance after this coin join
+        total_wallet_balance = sum(self.wallet_service.get_balance_by_mixdepth().values())
+        if total_wallet_balance - amount < self.cs_min_balance:
+            jlog.debug("total_wallet_balance - amount {} is less than cs_min_balance {}".format(
+                total_wallet_balance - amount, self.cs_min_balance))
+            return False
+        else:
+            jlog.debug("sending coin join output to cold storage wallet {}".format(
+                self.cswallet_service.get_wallet_name()))
+            return True
 
     def select_output_address(self, input_mixdepth, offer, amount):
         """Returns the address to which the mixed output should be sent for
@@ -305,9 +293,7 @@ class YieldGeneratorBasic(YieldGenerator):
         there is no suitable output, in which case the order is
         aborted."""
         if self.should_use_cswallet(input_mixdepth, amount):
-            output_address = self.cswallet_service.get_internal_addr(WatchonlyMixin.WATCH_ONLY_MIXDEPTH)
-            jlog.info("Sending coin join output to cold storage wallet addr {}".format(output_address))
-            return output_address
+            return self.cswallet_service.get_internal_addr(WatchonlyMixin.WATCH_ONLY_MIXDEPTH)
         else:
             cjoutmix = (input_mixdepth + 1) % (self.wallet_service.mixdepth + 1)
             return self.wallet_service.get_internal_addr(cjoutmix)
@@ -357,7 +343,7 @@ def ygmain(ygclass, nickserv_password='', gaplimit=6):
     parser.add_option('-x', '--cs-min-txsize', action='store', type='int',
                       dest='cs_min_txsize', default=100000000,
                       help='minimum coinjoin size in satoshis for sending to cold storage')
-    parser.add_option('-b', '--cs-minbalance', action='store', type='int',
+    parser.add_option('-b', '--cs-min-balance', action='store', type='int',
                       dest='cs_min_balance', default=500000000,
                       help='minimum balalance in satoshis to keep locally')
     parser.add_option('-p', '--password', action='store', type='string',
