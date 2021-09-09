@@ -2354,8 +2354,8 @@ def onTabChange(i):
     # TODO: hardcoded literal;
     # note that this is needed for an auto-update
     # of utxos on the Coins tab only atm.
-    if i == 4:
-        tabWidget.widget(4).updateUtxos()
+    if i == 3:
+        tabWidget.widget(3).updateUtxos()
 
 #to allow testing of confirm/unconfirm callback for multiple txs
 if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
