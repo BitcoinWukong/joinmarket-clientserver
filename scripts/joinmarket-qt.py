@@ -1411,8 +1411,9 @@ class JMWalletTab(QWidget):
             self)
         self.label1.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
         v = MyTreeWidget(self, self.create_menu, self.getHeaders())
-        v.header().resizeSection(0, 400)    # size of "Address" column
-        v.header().resizeSection(1, 130)    # size of "Index" column
+        v.header().resizeSection(0, 650)    # size of "Address" column
+        v.header().resizeSection(1, 250)    # size of "Index" column
+        v.header().resizeSection(3, 160)    # size of "Notes" column
         v.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.on_update = self.updateWalletInfo
         v.hide()
@@ -1430,7 +1431,7 @@ class JMWalletTab(QWidget):
 
     def getHeaders(self):
         '''Function included in case dynamic in future'''
-        return ['Address', 'Index', 'Balance', 'Used/New']
+        return ['Address', 'Index', 'Balance', 'Notes']
 
     def create_menu(self, position):
         item = self.walletTree.currentItem()
@@ -1606,9 +1607,20 @@ class JMMainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def resizeWindow(self):
+        # Resize the window base on the desktop size
+        default_width = 1000
+        default_height = 600
+
+        desktop_rect = QDesktopWidget().availableGeometry()
+        self.resize(
+            default_width if default_width < desktop_rect.width() - 100 else desktop_rect.width() - 100,
+            default_height if default_height < desktop_rect.height() - 100 else desktop_rect.height() - 100
+        )
+
     def initUI(self):
         self.statusBar().showMessage("Ready")
-        self.setGeometry(300, 300, 250, 150)
+        self.resizeWindow()
         loadAction = QAction('&Load...', self)
         loadAction.setStatusTip('Load wallet from file')
         loadAction.triggered.connect(self.selectWallet)
@@ -2343,7 +2355,6 @@ tabWidget.addTab(SpendTab(), "Coinjoins")
 tabWidget.addTab(TxHistoryTab(), "Tx History")
 tabWidget.addTab(CoinsTab(), "Coins")
 
-mainWindow.resize(600, 500)
 if get_network() == 'testnet':
     suffix = ' - Testnet'
 elif get_network() == 'signet':
