@@ -14,6 +14,7 @@ from jmclient import (get_network, WALLET_IMPLEMENTATIONS, Storage, podle,
     VolatileStorage, StoragePasswordError, is_segwit_mode, SegwitLegacyWallet,
     LegacyWallet, SegwitWallet, FidelityBondMixin, FidelityBondWatchonlyWallet,
     is_native_segwit_mode, load_program_config, add_base_options, check_regtest)
+from jmclient.wallet import SegwitWatchonlyWallet, WatchonlyMixin
 from jmclient.wallet_service import WalletService
 from jmbase.support import (get_password, jmprint, EXIT_FAILURE,
                             EXIT_ARGERROR, utxo_to_utxostr, hextobin, bintohex,
@@ -51,7 +52,8 @@ The method is one of the following:
 (gettimelockaddress) Obtain a timelocked address. Argument is locktime value as yyyy-mm. For example `2021-03`.
 (addtxoutproof) Add a tx out proof as metadata to a burner transaction. Specify path with
     -H and proof which is output of Bitcoin Core\'s RPC call gettxoutproof.
-(createwatchonly) Create a watch-only fidelity bond wallet.
+(createwatchonly) Create a watch-only wallet.
+(createfbwatchonly) Create a watch-only fidelity bond wallet.
 """
     parser = OptionParser(usage='usage: %prog [options] [wallet file] [method] [args..]',
                           description=description, formatter=IndentedHelpFormatterWithNL())
@@ -88,6 +90,10 @@ The method is one of the following:
                       default=1,
                       help=('History method verbosity, 0 (least) to 6 (most), '
                             '<=2 batches earnings, even values also list TXIDs'))
+    parser.add_option('--hide-new-addr',
+                      action='store_true',
+                      dest='hidenewaddr',
+                      help='Hide new addresses when display wallet balance')
     parser.add_option('-H',
                       '--hd',
                       action='store',
@@ -141,8 +147,16 @@ class WalletViewBase(object):
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return sum([x.get_balance() for x in self.children])
 
+    def get_available_balance(self):
+        return sum([x.get_available_balance() for x in self.children])
+
     def get_fmt_balance(self, include_unconf=True):
-        return "{0:.08f}".format(self.get_balance(include_unconf))
+        unavailable_balance = self.get_available_balance()
+        total_balance = self.get_balance(include_unconf)
+        if unavailable_balance != total_balance:
+            return "{0:.08f} ({1:.08f})".format(unavailable_balance, total_balance)
+        else:
+            return "{0:.08f}".format(total_balance)
 
 class WalletViewEntry(WalletViewBase):
     def __init__(self, wallet_path_repr, account, address_type, aindex, addr, amounts,
@@ -163,12 +177,21 @@ class WalletViewEntry(WalletViewBase):
         self.private_key = priv
         self.used = used
 
+    def is_locked(self):
+        return "[LOCKED]" in self.used
+
+    def is_frozen(self):
+        return "[FROZEN]" in self.used
+
     def get_balance(self, include_unconf=True):
         """Overwrites base class since no children
         """
         if not include_unconf:
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return self.unconfirmed_amount/1e8
+
+    def get_available_balance(self, include_unconf=True):
+        return 0 if self.is_locked() or self.is_frozen() else self.get_balance()
 
     def serialize(self):
         left = self.serialize_wallet_position()
@@ -214,7 +237,7 @@ class WalletViewBranch(WalletViewBase):
             FidelityBondMixin.BIP32_BURN_ID]
         self.address_type = address_type
         if xpub:
-            assert xpub.startswith('xpub') or xpub.startswith('tpub')
+            assert xpub.startswith('xpub') or xpub.startswith('tpub') or xpub.startswith('ypub') or xpub.startswith('zpub')
         self.xpub = xpub if xpub else ""
         self.branchentries = branchentries
 
@@ -393,18 +416,25 @@ def wallet_showutxos(wallet_service, showprivkey):
 
 
 def wallet_display(wallet_service, showprivkey, displayall=False,
-        serialized=True, summarized=False, mixdepth=None):
+        serialized=True, summarized=False, mixdepth=None, hidenewaddr=False):
     """build the walletview object,
     then return its serialization directly if serialized,
     else return the WalletView object.
     """
-    def get_addr_status(addr_path, utxos, is_new, is_internal):
+    def get_addr_status(addr_path, utxos, utxos_enabled, is_new, is_internal):
         addr_balance = 0
         status = []
+        has_frozen_utxo = False
+        has_pending_utxo = False
         for utxo, utxodata in utxos.items():
             if addr_path != utxodata['path']:
                 continue
             addr_balance += utxodata['value']
+            if utxo not in utxos_enabled:
+                has_frozen_utxo = True
+            if utxodata['confs'] <= 0:
+                has_pending_utxo = True
+
             #TODO it is a failure of abstraction here that
             # the bitcoin core interface is used directly
             #the function should either be removed or added to bci
@@ -428,12 +458,18 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
         elif len(status) == 1:
             out_status = status[0]
 
+        if has_frozen_utxo:
+            out_status += ' [FROZEN]'
+        if has_pending_utxo:
+            out_status += ' [PENDING]'
+
         return addr_balance, out_status
 
     acctlist = []
-    # TODO - either optionally not show disabled utxos, or
-    # mark them differently in display (labels; colors)
-    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True)
+
+    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True, includeconfs=True)
+    utxos_enabled = wallet_service.get_utxos_by_mixdepth()
+
     if mixdepth:
         md_range = range(mixdepth, mixdepth + 1)
     else:
@@ -453,17 +489,18 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
             for k in range(unused_index + wallet_service.gap_limit):
                 path = wallet_service.get_path(m, address_type, k)
                 addr = wallet_service.get_address_from_path(path)
-                balance, used = get_addr_status(
-                    path, utxos[m], k >= unused_index, address_type)
+
+                balance, status = get_addr_status(
+                    path, utxos[m], utxos_enabled[m], k >= unused_index, address_type)
                 if showprivkey:
                     privkey = wallet_service.get_wif_path(path)
                 else:
                     privkey = ''
                 if (displayall or balance > 0 or
-                        (used == 'new' and address_type == 0)):
+                        (not hidenewaddr and status == 'new' and address_type == 0)):
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k, addr,
-                        [balance, balance], priv=privkey, used=used))
+                        [balance, balance], priv=privkey, used=status))
             wallet_service.set_next_index(m, address_type, unused_index)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
             branchlist.append(WalletViewBranch(path, m, address_type, entrylist,
@@ -478,10 +515,24 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
                 addr = wallet_service.get_address_from_path(path)
                 timelock = datetime.utcfromtimestamp(0) + timedelta(seconds=path[-1])
 
-                balance = sum([utxodata["value"] for utxo, utxodata in
-                    utxos[m].items() if path == utxodata["path"]])
+                balance = 0
+                has_frozen_utxo = False
+                has_pending_utxo = False
+                for utxo, utxodata in utxos[m].items():
+                    if path == utxodata["path"]:
+                        balance += utxodata["value"]
+                        if not utxo in utxos_enabled[m]:
+                            has_frozen_utxo = True
+                        if utxodata['confs'] <= 0:
+                            has_pending_utxo = True
+
                 status = timelock.strftime("%Y-%m-%d") + " [" + (
                     "LOCKED" if datetime.now() < timelock else "UNLOCKED") + "]"
+                if has_frozen_utxo:
+                    status += ' [FROZEN]'
+                if has_pending_utxo:
+                    status += ' [PENDING]'
+                
                 privkey = ""
                 if showprivkey:
                     privkey = wallet_service.get_wif_path(path)
@@ -1268,7 +1319,7 @@ def wallet_addtxoutproof(wallet_service, hdpath, txoutproof):
         new_merkle_branch, block_index)
     return "Done"
 
-def wallet_createwatchonly(wallet_root_path, master_pub_key):
+def wallet_createwatchonly(wallet_root_path, master_pub_key, is_fidelity_bond_wallet = False):
 
     wallet_name = cli_get_wallet_file_name(defaultname="watchonly.jmdat")
     if not wallet_name:
@@ -1281,15 +1332,23 @@ def wallet_createwatchonly(wallet_root_path, master_pub_key):
     if not password:
         return ""
 
-    entropy = FidelityBondMixin.get_xpub_from_fidelity_bond_master_pub_key(master_pub_key)
-    if not entropy:
-        jmprint("Error with provided master pub key", "error")
-        return ""
+    if is_fidelity_bond_wallet:
+        entropy = FidelityBondMixin.get_xpub_from_fidelity_bond_master_pub_key(master_pub_key)
+        if not entropy:
+            jmprint("Error with provided master public key", "error")
+            return ""
+    else:
+        entropy = master_pub_key
     entropy = entropy.encode()
 
-    wallet = create_wallet(wallet_path, password,
-        max_mixdepth=FidelityBondMixin.FIDELITY_BOND_MIXDEPTH,
-        wallet_cls=FidelityBondWatchonlyWallet, entropy=entropy)
+    if is_fidelity_bond_wallet:
+        create_wallet(wallet_path, password,
+            max_mixdepth=FidelityBondMixin.FIDELITY_BOND_MIXDEPTH,
+            wallet_cls=FidelityBondWatchonlyWallet, entropy=entropy)
+    else:
+        create_wallet(wallet_path, password,
+            max_mixdepth=WatchonlyMixin.WATCH_ONLY_MIXDEPTH,
+            wallet_cls=SegwitWatchonlyWallet, entropy=entropy)
     return "Done"
 
 def get_configured_wallet_type(support_fidelity_bonds):
@@ -1403,7 +1462,7 @@ def open_wallet(path, ask_for_password=True, password=None, read_only=False,
         while True:
             try:
                 # do not try empty password, assume unencrypted on empty password
-                pwd = get_password("Enter passphrase to decrypt wallet: ") or None
+                pwd = get_password("Enter passphrase to decrypt wallet {}: ".format(path)) or None
                 storage = Storage(path, password=pwd, read_only=read_only)
             except StoragePasswordError:
                 jmprint("Wrong password, try again.", "warning")
@@ -1456,7 +1515,7 @@ def wallet_tool_main(wallet_root_path):
     check_regtest(blockchain_start=False)
     # full path to the wallets/ subdirectory in the user data area:
     wallet_root_path = os.path.join(jm_single().datadir, wallet_root_path)
-    noseed_methods = ['generate', 'recover', 'createwatchonly']
+    noseed_methods = ['generate', 'recover', 'createwatchonly', 'createfbwatchonly']
     methods = ['display', 'displayall', 'summary', 'showseed', 'importprivkey',
                'history', 'showutxos', 'freeze', 'gettimelockaddress',
                'addtxoutproof', 'changepass']
@@ -1519,7 +1578,7 @@ def wallet_tool_main(wallet_root_path):
     #Now the wallet/data is prepared, execute the script according to the method
     if method == "display":
         return wallet_display(wallet_service, options.showprivkey,
-            mixdepth=options.mixdepth)
+            mixdepth=options.mixdepth, hidenewaddr=options.hidenewaddr)
     elif method == "displayall":
         return wallet_display(wallet_service, options.showprivkey,
             displayall=True, mixdepth=options.mixdepth)
@@ -1579,6 +1638,11 @@ def wallet_tool_main(wallet_root_path):
                 + 'Core\'s RPC call gettxoutproof', "error")
             sys.exit(EXIT_ARGERROR)
         return wallet_addtxoutproof(wallet_service, options.hd_path, args[2])
+    elif method == "createfbwatchonly":
+        if len(args) < 2:
+            jmprint("args: [master public key]", "error")
+            sys.exit(EXIT_ARGERROR)
+        return wallet_createwatchonly(wallet_root_path, args[1], is_fidelity_bond_wallet=True)
     elif method == "createwatchonly":
         if len(args) < 2:
             jmprint("args: [master public key]", "error")
