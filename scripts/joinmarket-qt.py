@@ -2375,11 +2375,11 @@ from twisted.internet import reactor
 mainWindow = JMMainWindow(reactor)
 tabWidget = QTabWidget(mainWindow)
 tabWidget.addTab(JMWalletTab(), "JM Wallet")
+tabWidget.addTab(TxHistoryTab(), "Tx History")
+tabWidget.addTab(SpendTab(), "Coinjoins")
+tabWidget.addTab(CoinsTab(), "Coins")
 settingsTab = SettingsTab()
 tabWidget.addTab(settingsTab, "Settings")
-tabWidget.addTab(SpendTab(), "Coinjoins")
-tabWidget.addTab(TxHistoryTab(), "Tx History")
-tabWidget.addTab(CoinsTab(), "Coins")
 
 if get_network() == 'testnet':
     suffix = ' - Testnet'
