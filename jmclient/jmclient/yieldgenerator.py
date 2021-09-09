@@ -293,7 +293,10 @@ class YieldGeneratorBasic(YieldGenerator):
         there is no suitable output, in which case the order is
         aborted."""
         if self.should_use_cswallet(input_mixdepth, amount):
-            return self.cswallet_service.get_internal_addr(WatchonlyMixin.WATCH_ONLY_MIXDEPTH)
+            output_address = self.cswallet_service.get_internal_addr(WatchonlyMixin.WATCH_ONLY_MIXDEPTH)
+            jlog.info("sending coin join output to cold storage wallet {} at address {}".format(
+                self.cswallet_service.get_wallet_name(), output_address))
+            return output_address
         else:
             cjoutmix = (input_mixdepth + 1) % (self.wallet_service.mixdepth + 1)
             return self.wallet_service.get_internal_addr(cjoutmix)
