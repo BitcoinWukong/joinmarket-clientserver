@@ -1314,6 +1314,10 @@ class CoinsTab(QWidget):
         self.cTW.header().setStretchLastSection(False)
         self.cTW.on_update = self.updateUtxos
 
+        self.cTW.header().resizeSection(0, 700) # size of "Txid:n" column
+        self.cTW.header().resizeSection(1, 110) # size of "Amount in BTC" column
+        self.cTW.header().resizeSection(2, 510) # size of "Address" column
+
         vbox = QVBoxLayout()
         self.setLayout(vbox)
         vbox.setContentsMargins(0,0,0,0)
@@ -1430,9 +1434,9 @@ class JMWalletTab(QWidget):
             self)
         self.label1.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
         v = MyTreeWidget(self, self.create_menu, self.getHeaders())
-        v.header().resizeSection(0, 650)    # size of "Address" column
-        v.header().resizeSection(1, 250)    # size of "Index" column
-        v.header().resizeSection(3, 160)    # size of "Notes" column
+        v.header().resizeSection(0, 670)    # size of "Address" column
+        v.header().resizeSection(1, 230)    # size of "Index" column
+        v.header().resizeSection(3, 250)    # size of "Notes" column
         v.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.on_update = self.updateWalletInfo
         v.hide()
@@ -1628,8 +1632,8 @@ class JMMainWindow(QMainWindow):
 
     def resizeWindow(self):
         # Resize the window base on the desktop size
-        default_width = 1000
-        default_height = 600
+        default_width = 1350
+        default_height = 1000
 
         desktop_rect = QDesktopWidget().availableGeometry()
         self.resize(
