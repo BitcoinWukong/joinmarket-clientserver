@@ -1314,6 +1314,10 @@ class CoinsTab(QWidget):
         self.cTW.header().setStretchLastSection(False)
         self.cTW.on_update = self.updateUtxos
 
+        self.cTW.header().resizeSection(0, 700) # size of "Txid:n" column
+        self.cTW.header().resizeSection(1, 110) # size of "Amount in BTC" column
+        self.cTW.header().resizeSection(2, 510) # size of "Address" column
+
         vbox = QVBoxLayout()
         self.setLayout(vbox)
         vbox.setContentsMargins(0,0,0,0)
@@ -1430,8 +1434,9 @@ class JMWalletTab(QWidget):
             self)
         self.label1.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
         v = MyTreeWidget(self, self.create_menu, self.getHeaders())
-        v.header().resizeSection(0, 400)    # size of "Address" column
-        v.header().resizeSection(1, 130)    # size of "Index" column
+        v.header().resizeSection(0, 670)    # size of "Address" column
+        v.header().resizeSection(1, 230)    # size of "Index" column
+        v.header().resizeSection(3, 250)    # size of "Notes" column
         v.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.on_update = self.updateWalletInfo
         v.hide()
@@ -1449,7 +1454,7 @@ class JMWalletTab(QWidget):
 
     def getHeaders(self):
         '''Function included in case dynamic in future'''
-        return ['Address', 'Index', 'Balance', 'Used/New']
+        return ['Address', 'Index', 'Balance', 'Notes']
 
     def create_menu(self, position):
         item = self.walletTree.currentItem()
@@ -1478,9 +1483,12 @@ class JMWalletTab(QWidget):
             menu.addAction("Copy extended public key to clipboard",
                            lambda: app.clipboard().setText(xpub),
                            shortcut=QKeySequence(QKeySequence.Copy))
+        menu.addAction("Refresh wallet",
+                       lambda: mainWindow.updateWalletInfo(None, "all"),
+                       shortcut=QKeySequence(QKeySequence.Refresh))
+
         #TODO add more items to context menu
-        if address_valid or xpub_exists:
-            menu.exec_(self.walletTree.viewport().mapToGlobal(position))
+        menu.exec_(self.walletTree.viewport().mapToGlobal(position))
 
     def openQRCodePopup(self, address):
         bip21_uri = btc.encode_bip21_uri(address, {})
@@ -1625,9 +1633,20 @@ class JMMainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def resizeWindow(self):
+        # Resize the window base on the desktop size
+        default_width = 1350
+        default_height = 1000
+
+        desktop_rect = QDesktopWidget().availableGeometry()
+        self.resize(
+            default_width if default_width < desktop_rect.width() - 100 else desktop_rect.width() - 100,
+            default_height if default_height < desktop_rect.height() - 100 else desktop_rect.height() - 100
+        )
+
     def initUI(self):
         self.statusBar().showMessage("Ready")
-        self.setGeometry(300, 300, 250, 150)
+        self.resizeWindow()
         loadAction = QAction('&Load...', self)
         loadAction.setStatusTip('Load wallet from file')
         loadAction.triggered.connect(self.selectWallet)
@@ -2362,7 +2381,6 @@ tabWidget.addTab(SpendTab(), "Coinjoins")
 tabWidget.addTab(TxHistoryTab(), "Tx History")
 tabWidget.addTab(CoinsTab(), "Coins")
 
-mainWindow.resize(600, 500)
 if get_network() == 'testnet':
     suffix = ' - Testnet'
 elif get_network() == 'signet':
