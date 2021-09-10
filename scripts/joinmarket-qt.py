@@ -1979,20 +1979,15 @@ class JMMainWindow(QMainWindow):
         walletLoaded = False
 
         while not walletLoaded:
-            openWalletDialog.show()
-
             if openWalletDialog.exec_() == QDialog.Accepted:
                 wallet_path = openWalletDialog.walletFileEdit.text()
                 if not os.path.isabs(wallet_path):
                     wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
                 
                 try:
-                    walletLoaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text())
+                    walletLoaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text(), rethrow=True)
                 except Exception as e:
-                    JMQtMessageBox(None,
-                                str(e),
-                                mbtype='warn',
-                                title="Error")
+                    openWalletDialog.errorMessageLabel.setText(str(e))
             else:
                 break
 
@@ -2042,7 +2037,7 @@ class JMMainWindow(QMainWindow):
             #ignore return value as there is no decryption failure possible
             self.loadWalletFromBlockchain(firstarg, pwd)
 
-    def loadWalletFromBlockchain(self, firstarg=None, pwd=None):
+    def loadWalletFromBlockchain(self, firstarg=None, pwd=None, rethrow=False):
         if firstarg:
             wallet_path = get_wallet_path(str(firstarg), None)
             try:
@@ -2050,11 +2045,14 @@ class JMMainWindow(QMainWindow):
                         None, ask_for_password=False, password=pwd.encode('utf-8') if pwd else None,
                         gap_limit=jm_single().config.getint("GUI", "gaplimit"))
             except RetryableStorageError as e:
-                JMQtMessageBox(self,
-                               str(e),
-                               mbtype='warn',
-                               title="Error")
-                return False
+                if rethrow:
+                    raise e
+                else:
+                    JMQtMessageBox(self,
+                                str(e),
+                                mbtype='warn',
+                                title="Error")
+                    return False
             # only used for GUI display on regtest:
             self.testwalletname = wallet.seed = str(firstarg)
         if 'listunspent_args' not in jm_single().config.options('POLICY'):
