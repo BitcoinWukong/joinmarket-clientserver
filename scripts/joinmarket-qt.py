@@ -1650,7 +1650,7 @@ class JMMainWindow(QMainWindow):
         self.resizeWindow()
         openWalletAction = QAction('&Open...', self)
         openWalletAction.setStatusTip('Open joinmarket wallet file')
-        openWalletAction.setShortcut('Ctrl+O')
+        openWalletAction.setShortcut(QKeySequence.Open)
         openWalletAction.triggered.connect(self.openWallet)
         generateAction = QAction('&Generate...', self)
         generateAction.setStatusTip('Generate new wallet')
@@ -1671,7 +1671,7 @@ class JMMainWindow(QMainWindow):
         receivePayjoinAction.setStatusTip('Receive BIP78 style payment')
         receivePayjoinAction.triggered.connect(self.receiver_bip78_init)
         quitAction = QAction(QIcon('exit.png'), '&Quit', self)
-        quitAction.setShortcut('Ctrl+Q')
+        quitAction.setShortcut(QKeySequence.Quit)
         quitAction.setStatusTip('Quit application')
         quitAction.triggered.connect(qApp.quit)
 
