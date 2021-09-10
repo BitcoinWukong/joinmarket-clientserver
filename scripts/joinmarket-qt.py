@@ -1648,9 +1648,10 @@ class JMMainWindow(QMainWindow):
     def initUI(self):
         self.statusBar().showMessage("Ready")
         self.resizeWindow()
-        loadAction = QAction('&Load...', self)
-        loadAction.setStatusTip('Load wallet from file')
-        loadAction.triggered.connect(self.selectWallet)
+        openWalletAction = QAction('&Open...', self)
+        openWalletAction.setStatusTip('Open joinmarket wallet file')
+        openWalletAction.setShortcut('Ctrl+O')
+        openWalletAction.triggered.connect(self.openWallet)
         generateAction = QAction('&Generate...', self)
         generateAction.setStatusTip('Generate new wallet')
         generateAction.triggered.connect(self.generateWallet)
@@ -1679,7 +1680,7 @@ class JMMainWindow(QMainWindow):
 
         menubar = self.menuBar()
         walletMenu = menubar.addMenu('&Wallet')
-        walletMenu.addAction(loadAction)
+        walletMenu.addAction(openWalletAction)
         walletMenu.addAction(generateAction)
         walletMenu.addAction(recoverAction)
         walletMenu.addAction(showSeedAction)
@@ -1972,6 +1973,28 @@ class JMMainWindow(QMainWindow):
         JMQtMessageBox(self, 'Wallet saved to ' + self.walletname,
                                    title="Wallet created")
         self.initWallet(seed=self.walletname)
+
+    def openWallet(self):
+        openWalletDialog = JMOpenWalletDialog()
+        walletLoaded = False
+
+        while not walletLoaded:
+            openWalletDialog.show()
+
+            if openWalletDialog.exec_() == QDialog.Accepted:
+                wallet_path = openWalletDialog.walletFileEdit.text()
+                if not os.path.isabs(wallet_path):
+                    wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
+                
+                try:
+                    walletLoaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text())
+                except Exception as e:
+                    JMQtMessageBox(None,
+                                str(e),
+                                mbtype='warn',
+                                title="Error")
+            else:
+                break
 
     def selectWallet(self, testnet_seed=None):
         if jm_single().config.get("BLOCKCHAIN", "blockchain_source") != "regtest":
@@ -2396,21 +2419,7 @@ tabWidget.currentChanged.connect(onTabChange)
 mainWindow.show()
 reactor.runReturn()
 
-# Upon launching the app, allow the user to choose a wallet to open
-openWalletDialog = JMOpenWalletDialog()
-openWalletDialog.show()
-
-if openWalletDialog.exec_() == QDialog.Accepted:
-    wallet_path = openWalletDialog.walletFileEdit.text()
-    if not os.path.isabs(wallet_path):
-        wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
-    
-    try:
-        mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text())
-    except Exception as e:
-        JMQtMessageBox(None,
-                    str(e),
-                    mbtype='warn',
-                    title="Error")
+# Upon launching the app, ask the user to choose a wallet to open
+mainWindow.openWallet()
 
 sys.exit(app.exec_())
