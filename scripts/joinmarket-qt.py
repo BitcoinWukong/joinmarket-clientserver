@@ -114,6 +114,7 @@ class JMOpenWalletDialog(QDialog, Ui_OpenWalletDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
+        self.passphraseEdit.setFocus()
 
         self.chooseWalletButton.clicked.connect(self.chooseWalletFile)
 
@@ -125,6 +126,7 @@ class JMOpenWalletDialog(QDialog, Ui_OpenWalletDialog):
                                                 options=QFileDialog.DontUseNativeDialog)
         if filename:
             self.walletFileEdit.setText(filename)
+            self.passphraseEdit.setFocus()
 
 
 class HelpLabel(QLabel):
@@ -1649,7 +1651,7 @@ class JMMainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.resizeWindow()
         openWalletAction = QAction('&Open...', self)
-        openWalletAction.setStatusTip('Open joinmarket wallet file')
+        openWalletAction.setStatusTip('Open JoinMarket wallet file')
         openWalletAction.setShortcut(QKeySequence.Open)
         openWalletAction.triggered.connect(self.openWallet)
         generateAction = QAction('&Generate...', self)

@@ -251,9 +251,9 @@
   </layout>
  </widget>
  <tabstops>
-  <tabstop>passphraseEdit</tabstop>
-  <tabstop>chooseWalletButton</tabstop>
   <tabstop>walletFileEdit</tabstop>
+  <tabstop>chooseWalletButton</tabstop>
+  <tabstop>passphraseEdit</tabstop>
  </tabstops>
  <resources/>
  <connections>
