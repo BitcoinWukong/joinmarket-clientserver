@@ -139,8 +139,8 @@ class Ui_OpenWalletDialog(object):
         self.verticalLayout.addLayout(self.horizontalLayout_3)
 
         self.verticalLayout.setStretch(3, 1)
-        QWidget.setTabOrder(self.passphraseEdit, self.chooseWalletButton)
-        QWidget.setTabOrder(self.chooseWalletButton, self.walletFileEdit)
+        QWidget.setTabOrder(self.walletFileEdit, self.chooseWalletButton)
+        QWidget.setTabOrder(self.chooseWalletButton, self.passphraseEdit)
 
         self.retranslateUi(OpenWalletDialog)
         self.buttonBox.accepted.connect(OpenWalletDialog.accept)
