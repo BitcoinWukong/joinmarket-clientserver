@@ -108,6 +108,27 @@ handler = QtHandler()
 handler.setFormatter(logging.Formatter("%(levelname)s:%(message)s"))
 log.addHandler(handler)
 
+
+from jmqtui import Ui_OpenWalletDialog
+class JMOpenWalletDialog(QDialog, Ui_OpenWalletDialog):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.passphraseEdit.setFocus()
+
+        self.chooseWalletButton.clicked.connect(self.chooseWalletFile)
+
+    def chooseWalletFile(self):
+        wallets_path = os.path.join(jm_single().datadir, 'wallets')
+        (filename, _) = QFileDialog.getOpenFileName(self,
+                                                'Choose Wallet File',
+                                                wallets_path,
+                                                options=QFileDialog.DontUseNativeDialog)
+        if filename:
+            self.walletFileEdit.setText(filename)
+            self.passphraseEdit.setFocus()
+
+
 class HelpLabel(QLabel):
 
     def __init__(self, text, help_text, wtitle):
@@ -536,8 +557,9 @@ class SpendTab(QWidget):
         innerTopLayout.setSpacing(4)
         self.single_join_tab.setLayout(innerTopLayout)
 
-        donateLayout = self.getDonateLayout()
-        innerTopLayout.addLayout(donateLayout, 0, 0, 1, 2)
+        #Temporarily disabled
+        # donateLayout = self.getDonateLayout()
+        # innerTopLayout.addLayout(donateLayout, 0, 0, 1, 2)
 
         recipientLabel = QLabel('Recipient address / URI')
         recipientLabel.setToolTip(
@@ -1295,6 +1317,10 @@ class CoinsTab(QWidget):
         self.cTW.header().setStretchLastSection(False)
         self.cTW.on_update = self.updateUtxos
 
+        self.cTW.header().resizeSection(0, 700) # size of "Txid:n" column
+        self.cTW.header().resizeSection(1, 110) # size of "Amount in BTC" column
+        self.cTW.header().resizeSection(2, 510) # size of "Address" column
+
         vbox = QVBoxLayout()
         self.setLayout(vbox)
         vbox.setContentsMargins(0,0,0,0)
@@ -1411,8 +1437,9 @@ class JMWalletTab(QWidget):
             self)
         self.label1.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
         v = MyTreeWidget(self, self.create_menu, self.getHeaders())
-        v.header().resizeSection(0, 400)    # size of "Address" column
-        v.header().resizeSection(1, 130)    # size of "Index" column
+        v.header().resizeSection(0, 670)    # size of "Address" column
+        v.header().resizeSection(1, 230)    # size of "Index" column
+        v.header().resizeSection(3, 250)    # size of "Notes" column
         v.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.on_update = self.updateWalletInfo
         v.hide()
@@ -1430,7 +1457,7 @@ class JMWalletTab(QWidget):
 
     def getHeaders(self):
         '''Function included in case dynamic in future'''
-        return ['Address', 'Index', 'Balance', 'Used/New']
+        return ['Address', 'Index', 'Balance', 'Notes']
 
     def create_menu(self, position):
         item = self.walletTree.currentItem()
@@ -1459,9 +1486,12 @@ class JMWalletTab(QWidget):
             menu.addAction("Copy extended public key to clipboard",
                            lambda: app.clipboard().setText(xpub),
                            shortcut=QKeySequence(QKeySequence.Copy))
+        menu.addAction("Refresh wallet",
+                       lambda: mainWindow.updateWalletInfo(None, "all"),
+                       shortcut=QKeySequence(QKeySequence.Refresh))
+
         #TODO add more items to context menu
-        if address_valid or xpub_exists:
-            menu.exec_(self.walletTree.viewport().mapToGlobal(position))
+        menu.exec_(self.walletTree.viewport().mapToGlobal(position))
 
     def openQRCodePopup(self, address):
         bip21_uri = btc.encode_bip21_uri(address, {})
@@ -1606,12 +1636,24 @@ class JMMainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def resizeWindow(self):
+        # Resize the window base on the desktop size
+        default_width = 1350
+        default_height = 1000
+
+        desktop_rect = QDesktopWidget().availableGeometry()
+        self.resize(
+            default_width if default_width < desktop_rect.width() - 100 else desktop_rect.width() - 100,
+            default_height if default_height < desktop_rect.height() - 100 else desktop_rect.height() - 100
+        )
+
     def initUI(self):
         self.statusBar().showMessage("Ready")
-        self.setGeometry(300, 300, 250, 150)
-        loadAction = QAction('&Load...', self)
-        loadAction.setStatusTip('Load wallet from file')
-        loadAction.triggered.connect(self.selectWallet)
+        self.resizeWindow()
+        openWalletAction = QAction('&Open...', self)
+        openWalletAction.setStatusTip('Open JoinMarket wallet file')
+        openWalletAction.setShortcut(QKeySequence.Open)
+        openWalletAction.triggered.connect(self.openWallet)
         generateAction = QAction('&Generate...', self)
         generateAction.setStatusTip('Generate new wallet')
         generateAction.triggered.connect(self.generateWallet)
@@ -1631,7 +1673,7 @@ class JMMainWindow(QMainWindow):
         receivePayjoinAction.setStatusTip('Receive BIP78 style payment')
         receivePayjoinAction.triggered.connect(self.receiver_bip78_init)
         quitAction = QAction(QIcon('exit.png'), '&Quit', self)
-        quitAction.setShortcut('Ctrl+Q')
+        quitAction.setShortcut(QKeySequence.Quit)
         quitAction.setStatusTip('Quit application')
         quitAction.triggered.connect(qApp.quit)
 
@@ -1640,7 +1682,7 @@ class JMMainWindow(QMainWindow):
 
         menubar = self.menuBar()
         walletMenu = menubar.addMenu('&Wallet')
-        walletMenu.addAction(loadAction)
+        walletMenu.addAction(openWalletAction)
         walletMenu.addAction(generateAction)
         walletMenu.addAction(recoverAction)
         walletMenu.addAction(showSeedAction)
@@ -1934,6 +1976,23 @@ class JMMainWindow(QMainWindow):
                                    title="Wallet created")
         self.initWallet(seed=self.walletname)
 
+    def openWallet(self):
+        openWalletDialog = JMOpenWalletDialog()
+        walletLoaded = False
+
+        while not walletLoaded:
+            if openWalletDialog.exec_() == QDialog.Accepted:
+                wallet_path = openWalletDialog.walletFileEdit.text()
+                if not os.path.isabs(wallet_path):
+                    wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
+                
+                try:
+                    walletLoaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text(), rethrow=True)
+                except Exception as e:
+                    openWalletDialog.errorMessageLabel.setText(str(e))
+            else:
+                break
+
     def selectWallet(self, testnet_seed=None):
         if jm_single().config.get("BLOCKCHAIN", "blockchain_source") != "regtest":
             # guaranteed to exist as load_program_config was called on startup:
@@ -1980,7 +2039,7 @@ class JMMainWindow(QMainWindow):
             #ignore return value as there is no decryption failure possible
             self.loadWalletFromBlockchain(firstarg, pwd)
 
-    def loadWalletFromBlockchain(self, firstarg=None, pwd=None):
+    def loadWalletFromBlockchain(self, firstarg=None, pwd=None, rethrow=False):
         if firstarg:
             wallet_path = get_wallet_path(str(firstarg), None)
             try:
@@ -1988,11 +2047,14 @@ class JMMainWindow(QMainWindow):
                         None, ask_for_password=False, password=pwd.encode('utf-8') if pwd else None,
                         gap_limit=jm_single().config.getint("GUI", "gaplimit"))
             except RetryableStorageError as e:
-                JMQtMessageBox(self,
-                               str(e),
-                               mbtype='warn',
-                               title="Error")
-                return False
+                if rethrow:
+                    raise e
+                else:
+                    JMQtMessageBox(self,
+                                str(e),
+                                mbtype='warn',
+                                title="Error")
+                    return False
             # only used for GUI display on regtest:
             self.testwalletname = wallet.seed = str(firstarg)
         if 'listunspent_args' not in jm_single().config.options('POLICY'):
@@ -2316,8 +2378,8 @@ def onTabChange(i):
     # TODO: hardcoded literal;
     # note that this is needed for an auto-update
     # of utxos on the Coins tab only atm.
-    if i == 4:
-        tabWidget.widget(4).updateUtxos()
+    if i == 2:
+        tabWidget.widget(2).updateUtxos()
 
 #to allow testing of confirm/unconfirm callback for multiple txs
 if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
@@ -2337,13 +2399,12 @@ from twisted.internet import reactor
 mainWindow = JMMainWindow(reactor)
 tabWidget = QTabWidget(mainWindow)
 tabWidget.addTab(JMWalletTab(), "JM Wallet")
+tabWidget.addTab(SpendTab(), "Coinjoins")
+tabWidget.addTab(CoinsTab(), "Coins")
+tabWidget.addTab(TxHistoryTab(), "Tx History")
 settingsTab = SettingsTab()
 tabWidget.addTab(settingsTab, "Settings")
-tabWidget.addTab(SpendTab(), "Coinjoins")
-tabWidget.addTab(TxHistoryTab(), "Tx History")
-tabWidget.addTab(CoinsTab(), "Coins")
 
-mainWindow.resize(600, 500)
 if get_network() == 'testnet':
     suffix = ' - Testnet'
 elif get_network() == 'signet':
@@ -2354,6 +2415,11 @@ mainWindow.setWindowTitle(appWindowTitle + suffix)
 tabWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 mainWindow.setCentralWidget(tabWidget)
 tabWidget.currentChanged.connect(onTabChange)
+
 mainWindow.show()
 reactor.runReturn()
+
+# Upon launching the app, ask the user to choose a wallet to open
+mainWindow.openWallet()
+
 sys.exit(app.exec_())
