@@ -1330,6 +1330,7 @@ def wallet_createwatchonly(wallet_root_path, master_pub_key, is_fidelity_bond_wa
 
     password = cli_get_wallet_passphrase_check()
     if not password:
+        jmprint("The passphrase can not be empty", "error")
         return ""
 
     if is_fidelity_bond_wallet:
