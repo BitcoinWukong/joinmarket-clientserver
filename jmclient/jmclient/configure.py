@@ -152,21 +152,20 @@ socks5_port = 9050
 #usessl = false
 #socks5 = true
 
-#Agora sometimes seems to be unreliable. Not active by default for that reason.
-#[MESSAGING:server3]
-#host = agora.anarplex.net
-#channel = joinmarket-pit
-#port = 14716
-#usessl = true
-#socks5 = false
-#socks5_host = localhost
-#socks5_port = 9050
-#
-##for tor
-##host = vxecvd6lc4giwtasjhgbrr3eop6pzq6i5rveracktioneunalgqlwfad.onion
-##port = 6667
-##usessl = false
-##socks5 = true
+[MESSAGING:server3]
+host = agora.anarplex.net
+channel = joinmarket-pit
+port = 14716
+usessl = true
+socks5 = false
+socks5_host = localhost
+socks5_port = 9050
+
+#for tor
+#host = vxecvd6lc4giwtasjhgbrr3eop6pzq6i5rveracktioneunalgqlwfad.onion
+#port = 6667
+#usessl = false
+#socks5 = true
 
 [LOGGING]
 # Set the log level for the output to the terminal/console
@@ -207,10 +206,13 @@ merge_algorithm = default
 # be interpreted as the fee in satoshi per kB that you wish to use
 # example: N=30000 will use 30000 sat/kB as a fee, while N=5
 # will use the estimate from your selected blockchain source
-# Note that there will be a 20% variation around any manually chosen
-# values, so if you set N=10000, it might use any value between
-# 8000 and 12000 for your transactions.
 tx_fees = 3
+
+# Transaction fee rate variance factor, 0.2 means 20% variation around
+# any manually chosen values, so if you set tx_fees=10000 and
+# tx_fees_factor=0.2, it might use any value between 8000 and 12000 for
+# your transactions.
+tx_fees_factor = 0.2
 
 # For users getting transaction fee estimates over an API,
 # place a sanity check limit on the satoshis-per-kB to be paid.
