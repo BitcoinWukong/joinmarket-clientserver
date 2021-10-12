@@ -53,7 +53,7 @@ qt5reactor.install()
 donation_address_url = "https://bitcoinprivacy.me/joinmarket-donations"
 
 #Version of this Qt script specifically
-JM_GUI_VERSION = '24dev'
+JM_GUI_VERSION = '24'
 
 from jmbase import get_log, stop_reactor
 from jmbase.support import EXIT_FAILURE, utxo_to_utxostr,\
@@ -61,7 +61,7 @@ from jmbase.support import EXIT_FAILURE, utxo_to_utxostr,\
 import jmbitcoin as btc
 from jmclient import load_program_config, get_network, update_persist_config,\
     open_test_wallet_maybe, get_wallet_path,\
-    jm_single, validate_address, weighted_order_choose, Taker,\
+    jm_single, validate_address, fidelity_bond_weighted_order_choose, Taker,\
     JMClientProtocolFactory, start_reactor, get_schedule, schedule_to_text,\
     get_blockchain_interface_instance, direct_send, WalletService,\
     RegtestBitcoinCoreInterface, tumbler_taker_finished_update,\
@@ -107,6 +107,25 @@ def update_config_for_gui():
 handler = QtHandler()
 handler.setFormatter(logging.Formatter("%(levelname)s:%(message)s"))
 log.addHandler(handler)
+
+
+from jmqtui import Ui_OpenWalletDialog
+class JMOpenWalletDialog(QDialog, Ui_OpenWalletDialog):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+
+        self.chooseWalletButton.clicked.connect(self.chooseWalletFile)
+
+    def chooseWalletFile(self):
+        wallets_path = os.path.join(jm_single().datadir, 'wallets')
+        (filename, _) = QFileDialog.getOpenFileName(self,
+                                                'Choose Wallet File',
+                                                wallets_path,
+                                                options=QFileDialog.DontUseNativeDialog)
+        if filename:
+            self.walletFileEdit.setText(filename)
+
 
 class HelpLabel(QLabel):
 
@@ -536,8 +555,9 @@ class SpendTab(QWidget):
         innerTopLayout.setSpacing(4)
         self.single_join_tab.setLayout(innerTopLayout)
 
-        donateLayout = self.getDonateLayout()
-        innerTopLayout.addLayout(donateLayout, 0, 0, 1, 2)
+        #Temporarily disabled
+        # donateLayout = self.getDonateLayout()
+        # innerTopLayout.addLayout(donateLayout, 0, 0, 1, 2)
 
         recipientLabel = QLabel('Recipient address / URI')
         recipientLabel.setToolTip(
@@ -870,7 +890,7 @@ class SpendTab(QWidget):
         self.taker = Taker(mainWindow.wallet_service,
                            self.spendstate.loaded_schedule,
                            maxcjfee,
-                           order_chooser=weighted_order_choose,
+                           order_chooser=fidelity_bond_weighted_order_choose,
                            callbacks=[check_offers_callback,
                                       self.takerInfo,
                                       self.takerFinished],
@@ -2319,8 +2339,8 @@ def onTabChange(i):
     # TODO: hardcoded literal;
     # note that this is needed for an auto-update
     # of utxos on the Coins tab only atm.
-    if i == 4:
-        tabWidget.widget(4).updateUtxos()
+    if i == 2:
+        tabWidget.widget(2).updateUtxos()
 
 #to allow testing of confirm/unconfirm callback for multiple txs
 if isinstance(jm_single().bc_interface, RegtestBitcoinCoreInterface):
@@ -2340,11 +2360,11 @@ from twisted.internet import reactor
 mainWindow = JMMainWindow(reactor)
 tabWidget = QTabWidget(mainWindow)
 tabWidget.addTab(JMWalletTab(), "JM Wallet")
+tabWidget.addTab(SpendTab(), "Coinjoins")
+tabWidget.addTab(CoinsTab(), "Coins")
+tabWidget.addTab(TxHistoryTab(), "Tx History")
 settingsTab = SettingsTab()
 tabWidget.addTab(settingsTab, "Settings")
-tabWidget.addTab(SpendTab(), "Coinjoins")
-tabWidget.addTab(TxHistoryTab(), "Tx History")
-tabWidget.addTab(CoinsTab(), "Coins")
 
 mainWindow.resize(600, 500)
 if get_network() == 'testnet':
@@ -2357,6 +2377,25 @@ mainWindow.setWindowTitle(appWindowTitle + suffix)
 tabWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 mainWindow.setCentralWidget(tabWidget)
 tabWidget.currentChanged.connect(onTabChange)
+
 mainWindow.show()
 reactor.runReturn()
+
+# Upon launching the app, allow the user to choose a wallet to open
+openWalletDialog = JMOpenWalletDialog()
+openWalletDialog.show()
+
+if openWalletDialog.exec_() == QDialog.Accepted:
+    wallet_path = openWalletDialog.walletFileEdit.text()
+    if not os.path.isabs(wallet_path):
+        wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
+    
+    try:
+        mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text())
+    except Exception as e:
+        JMQtMessageBox(None,
+                    str(e),
+                    mbtype='warn',
+                    title="Error")
+
 sys.exit(app.exec_())
