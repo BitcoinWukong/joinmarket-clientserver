@@ -374,7 +374,7 @@ class JMPayjoinManager(object):
             self.pj_state = self.JM_PJ_PAYJOIN_BROADCAST_FAILED
 
     def select_receiver_utxos(self):
-        # Rceiver chooses own inputs:
+        # Receiver chooses own inputs:
         # For earlier ideas about more complex algorithms, see the gist comment here:
         # https://gist.github.com/AdamISZ/4551b947789d3216bacfcb7af25e029e#gistcomment-2799709
         # and also see the code in P2EPMaker in earlier versions of Joinmarket.
@@ -901,7 +901,7 @@ class PayjoinConverter(object):
         assert signresult.num_inputs_final == len(receiver_utxos)
         assert not signresult.is_final
 
-        # with signing succcessful, remove the utxo field from the
+        # with signing successful, remove the utxo field from the
         # counterparty's input (this is required by BIP78). Note we don't
         # do this on PSBT creation as the psbt signing code throws ValueError
         # unless utxos are present.
