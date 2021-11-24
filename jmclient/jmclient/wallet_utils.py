@@ -52,8 +52,13 @@ The method is one of the following:
 (gettimelockaddress) Obtain a timelocked address. Argument is locktime value as yyyy-mm. For example `2021-03`.
 (addtxoutproof) Add a tx out proof as metadata to a burner transaction. Specify path with
     -H and proof which is output of Bitcoin Core\'s RPC call gettxoutproof.
+<<<<<<< HEAD
 (createwatchonly) Create a watch-only wallet.
 (createfbwatchonly) Create a watch-only fidelity bond wallet.
+=======
+(createwatchonly) Create a watch-only fidelity bond wallet.
+(setlabel) Set the label associated with the given address.
+>>>>>>> master
 """
     parser = OptionParser(usage='usage: %prog [options] [wallet file] [method] [args..]',
                           description=description, formatter=IndentedHelpFormatterWithNL())
@@ -160,7 +165,8 @@ class WalletViewBase(object):
 
 class WalletViewEntry(WalletViewBase):
     def __init__(self, wallet_path_repr, account, address_type, aindex, addr, amounts,
-                 used = 'new', serclass=str, priv=None, custom_separator=None):
+                 used = 'new', serclass=str, priv=None, custom_separator=None,
+                 label=None):
         super().__init__(wallet_path_repr, serclass=serclass,
                          custom_separator=custom_separator)
         self.account = account
@@ -176,6 +182,7 @@ class WalletViewEntry(WalletViewBase):
         #note no validation here
         self.private_key = priv
         self.used = used
+        self.label = label
 
     def is_locked(self):
         return "[LOCKED]" in self.used
@@ -197,8 +204,11 @@ class WalletViewEntry(WalletViewBase):
         left = self.serialize_wallet_position()
         addr = self.serialize_address()
         amounts = self.serialize_amounts()
+        used = self.serialize_used()
+        label = self.serialize_label()
         extradata = self.serialize_extra_data()
-        return self.serclass(self.separator.join([left, addr, amounts, extradata]))
+        return self.serclass(self.separator.join([
+            left, addr, amounts, used, label, extradata]))
 
     def serialize_json(self):
         return {"hd_path": self.wallet_path_repr,
@@ -220,11 +230,20 @@ class WalletViewEntry(WalletViewBase):
                                       "not yet implemented.")
         return self.serclass("{0:.08f}".format(self.unconfirmed_amount/1e8))
 
+    def serialize_used(self):
+        return self.serclass(self.used)
+
+    def serialize_label(self):
+        if self.label:
+            return self.serclass(self.label)
+        else:
+            return self.serclass("")
+
     def serialize_extra_data(self):
-        ed = self.used
         if self.private_key:
-            ed += self.separator + self.serclass(self.private_key)
-        return self.serclass(ed)
+            return self.serclass(self.private_key)
+        else:
+            return self.serclass("")
 
 class WalletViewEntryBurnOutput(WalletViewEntry):
     # balance in burn outputs shouldnt be counted
@@ -415,7 +434,9 @@ def wallet_showutxos(wallet_service, showprivkey):
             tries = podle.get_podle_tries(u, key, max_tries)
             tries_remaining = max(0, max_tries - tries)
             mixdepth = wallet_service.wallet.get_details(av['path'])[0]
-            unsp[us] = {'address': av['address'], 'value': av['value'],
+            unsp[us] = {'address': av['address'],
+                       'label': av['label'] if av['label'] else "",
+                       'value': av['value'],
                        'tries': tries, 'tries_remaining': tries_remaining,
                        'external': False,
                        'mixdepth': mixdepth,
@@ -436,7 +457,7 @@ def wallet_showutxos(wallet_service, showprivkey):
         unsp[us] = {'tries': tries, 'tries_remaining': tries_remaining,
                    'external': True}
 
-    return json.dumps(unsp, indent=4)
+    return json.dumps(unsp, indent=4, ensure_ascii=False)
 
 
 def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=False,
@@ -514,6 +535,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 path = wallet_service.get_path(m, address_type, k)
                 addr = wallet_service.get_address_from_path(path)
 
+                label = wallet_service.get_address_label(addr)
                 balance, status = get_addr_status(
                     path, utxos[m], utxos_enabled[m], k >= unused_index, address_type)
                 if showprivkey:
@@ -524,7 +546,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                         (not hidenewaddr and status == 'new' and address_type == 0)):
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k, addr,
-                        [balance, balance], priv=privkey, used=status))
+                        [balance, balance], priv=privkey, used=status, label=label))
             wallet_service.set_next_index(m, address_type, unused_index)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
             branchlist.append(WalletViewBranch(path, m, address_type, entrylist,
@@ -537,6 +559,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
             for timenumber in range(FidelityBondMixin.TIMENUMBER_COUNT):
                 path = wallet_service.get_path(m, address_type, timenumber)
                 addr = wallet_service.get_address_from_path(path)
+                label = wallet_service.get_address_label(addr)
                 timelock = datetime.utcfromtimestamp(0) + timedelta(seconds=path[-1])
 
                 balance = 0
@@ -563,7 +586,8 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 if displayall or balance > 0:
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k,
-                        addr, [balance, balance], priv=privkey, used=status))
+                        addr, [balance, balance], priv=privkey, used=status,
+                        label=label))
             xpub_key = wallet_service.get_bip32_pub_export(m, address_type)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
             branchlist.append(WalletViewBranch(path, m, address_type, entrylist,
@@ -1546,7 +1570,7 @@ def wallet_tool_main(wallet_root_path):
     noseed_methods = ['generate', 'recover', 'createwatchonly', 'createfbwatchonly']
     methods = ['display', 'displayall', 'summary', 'showseed', 'importprivkey',
                'history', 'showutxos', 'freeze', 'gettimelockaddress',
-               'addtxoutproof', 'changepass']
+               'addtxoutproof', 'changepass', 'setlabel']
     methods.extend(noseed_methods)
     noscan_methods = ['showseed', 'importprivkey', 'dumpprivkey', 'signmessage',
                       'changepass']
@@ -1676,6 +1700,15 @@ def wallet_tool_main(wallet_root_path):
             jmprint("args: [master public key]", "error")
             sys.exit(EXIT_ARGERROR)
         return wallet_createwatchonly(wallet_root_path, args[1])
+    elif method == "setlabel":
+        if len(args) < 4:
+            jmprint("args: address label", "error")
+            sys.exit(EXIT_ARGERROR)
+        wallet.set_address_label(args[2], args[3])
+        if args[3]:
+            return "Address label set"
+        else:
+            return "Address label removed"
     else:
         parser.error("Unknown wallet-tool method: " + method)
         sys.exit(EXIT_ARGERROR)

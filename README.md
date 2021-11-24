@@ -26,6 +26,7 @@ For a quick introduction to Joinmarket you can watch [this demonstration](https:
 * GUI to support Taker role, including tumbler/automated coinjoin sequence.
 * PayJoin - [BIP78](https://github.com/bitcoin/bips/blob/master/bip-0078.mediawiki) to pay users of other wallets (e.g. merchants), as well as between two compatible wallet users (Joinmarket, Wasabi, others). This is a way to boost fungibility/privacy while paying.
 * Protection from [forced address reuse](https://en.bitcoin.it/wiki/Privacy#Forced_address_reuse) attacks.
+* Address labeling
 
 ### Quickstart - RECOMMENDED INSTALLATION METHOD (Linux and macOS only)
 
@@ -68,7 +69,7 @@ If you are running Joinmarket-Qt, you can instead use the [walkthrough](docs/JOI
 If you used the old version of Joinmarket, the notes in the [scripts readme](scripts/README.md) help to understand what has and hasn't changed about the scripts (warning: this refers to changes from several years ago, so may be slightly outdated).
 
 If you are looking for the available makers, run the [orderbook](docs/orderbook.md). 
-Public mainnet mirror: [JoinMarket Browser Interface Orderbook](https://nixbitcoin.org/obwatcher) [(🧅 tor)](http://qvzlxbjvyrhvsuyzz5t63xx7x336dowdvt7wfj53sisuun4i4rdtbzid.onion/obwatcher)
+Public mainnet mirror: [JoinMarket Browser Interface Orderbook](https://nixbitcoin.org/orderbook) [(🧅 tor)](http://qvzlxbjvyrhvsuyzz5t63xx7x336dowdvt7wfj53sisuun4i4rdtbzid.onion/orderbook)
 
 ### PayJoin
 

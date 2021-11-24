@@ -119,53 +119,78 @@ blockchain_source = bitcoin-rpc
 network = mainnet
 rpc_host = localhost
 # default ports are 8332 for mainnet, 18443 for regtest, 18332 for testnet, 38332 for signet
-rpc_port = 8332
+rpc_port =
 rpc_user = bitcoin
 rpc_password = password
 rpc_wallet_file =
 
+## SERVER 1/4) Darkscience IRC (Tor, IP)
+################################################################################
 [MESSAGING:server1]
-host = irc.darkscience.net
 channel = joinmarket-pit
 port = 6697
 usessl = true
-socks5 = false
-socks5_host = localhost
-socks5_port = 9050
 
-#for tor
+# for traditional IP (default):
+host = irc.darkscience.net
+socks5 = false
+
+# for Tor (recommended as clearnet alternative):
 #host = darkirc6tqgpnwd3blln3yfv5ckl47eg7llfxkmtovrv7c7iwohhb6ad.onion
 #socks5 = true
+#socks5_host = localhost
+#socks5_port = 9050
 
+## SERVER 2/4) hackint IRC (Tor, IP)
+################################################################################
 [MESSAGING:server2]
-host = irc.hackint.org
 channel = joinmarket-pit
+
+# for traditional IP (default):
+host = irc.hackint.org
 port = 6697
 usessl = true
 socks5 = false
-socks5_host = localhost
-socks5_port = 9050
 
-#for tor
+# for Tor (recommended as clearnet alternative):
 #host = ncwkrwxpq2ikcngxq3dy2xctuheniggtqeibvgofixpzvrwpa77tozqd.onion
 #port = 6667
 #usessl = false
 #socks5 = true
+#socks5_host = localhost
+#socks5_port = 9050
 
+## SERVER 3/4) Anarplex IRC (Tor, IP)
+################################################################################
 [MESSAGING:server3]
-host = agora.anarplex.net
 channel = joinmarket-pit
+
+# for traditional IP (default):
+host = agora.anarplex.net
 port = 14716
 usessl = true
 socks5 = false
-socks5_host = localhost
-socks5_port = 9050
 
-#for tor
+# for Tor (recommended as clearnet alternative):
 #host = vxecvd6lc4giwtasjhgbrr3eop6pzq6i5rveracktioneunalgqlwfad.onion
 #port = 6667
 #usessl = false
 #socks5 = true
+#socks5_host = localhost
+#socks5_port = 9050
+
+## SERVER 4/4) ILITA IRC (Tor — disabled by default)
+################################################################################
+#[MESSAGING:server4]
+#channel = joinmarket-pit
+#port = 6667
+#usessl = false
+#socks5 = true
+#socks5_host = localhost
+
+# for Tor (recommended):
+#host = ilitafrzzgxymv6umx2ux7kbz3imyeko6cnqkvy4nisjjj4qpqkrptid.onion
+#socks5_port = 9050
 
 [LOGGING]
 # Set the log level for the output to the terminal/console
@@ -200,7 +225,7 @@ merge_algorithm = default
 
 # The fee estimate is based on a projection of how many satoshis
 # per kB are needed to get in one of the next N blocks, N set here
-# as the value of 'tx_fees'. This cost estimate is high if you set 
+# as the value of 'tx_fees'. This cost estimate is high if you set
 # N=1, so we choose 3 for a more reasonable figure, as our default.
 # You can also set your own fee/kb: any number higher than 1000 will
 # be interpreted as the fee in satoshi per kB that you wish to use
@@ -410,7 +435,8 @@ cjfee_r = 0.00002
 cjfee_factor = 0.1
 
 # [satoshis, any integer] / the average transaction fee you're adding to coinjoin transactions
-txfee_contribution = 100
+# (note: this will soon be deprecated; leave at zero)
+txfee_contribution = 0
 
 # [fraction, 0-1] / variance around the average fee. Ex: 1000 fee, 0.2 var = fee is btw 800-1200
 txfee_contribution_factor = 0.3
@@ -739,6 +765,17 @@ def get_blockchain_interface_instance(_config):
     if source in ('bitcoin-rpc', 'regtest', 'bitcoin-rpc-no-history'):
         rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
         rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
+        if rpc_port == '':
+            if network == 'mainnet':
+                rpc_port = 8332
+            elif network == 'regtest':
+                rpc_port = 18443
+            elif network == 'testnet':
+                rpc_port = 18332
+            elif network == 'signet':
+                rpc_port = 38332
+            else:
+                raise ValueError('wrong network configured: ' + network)
         rpc_user, rpc_password = get_bitcoin_rpc_credentials(_config)
         rpc_wallet_file = _config.get("BLOCKCHAIN", "rpc_wallet_file")
         rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password,
