@@ -52,13 +52,9 @@ The method is one of the following:
 (gettimelockaddress) Obtain a timelocked address. Argument is locktime value as yyyy-mm. For example `2021-03`.
 (addtxoutproof) Add a tx out proof as metadata to a burner transaction. Specify path with
     -H and proof which is output of Bitcoin Core\'s RPC call gettxoutproof.
-<<<<<<< HEAD
 (createwatchonly) Create a watch-only wallet.
 (createfbwatchonly) Create a watch-only fidelity bond wallet.
-=======
-(createwatchonly) Create a watch-only fidelity bond wallet.
 (setlabel) Set the label associated with the given address.
->>>>>>> master
 """
     parser = OptionParser(usage='usage: %prog [options] [wallet file] [method] [args..]',
                           description=description, formatter=IndentedHelpFormatterWithNL())
