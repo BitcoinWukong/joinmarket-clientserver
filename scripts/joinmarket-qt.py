@@ -1980,19 +1980,24 @@ class JMMainWindow(QMainWindow):
         self.initWallet(seed=self.walletname)
 
     def openWallet(self):
-        openWalletDialog = JMOpenWalletDialog()
-        walletLoaded = False
+        wallet_loaded = False
+        wallet_file_text = "wallet.jmdat"
+        error_text = ""
 
-        while not walletLoaded:
+        while not wallet_loaded:
+            openWalletDialog = JMOpenWalletDialog()
+            openWalletDialog.walletFileEdit.setText(wallet_file_text)
+            openWalletDialog.errorMessageLabel.setText(error_text)
             if openWalletDialog.exec_() == QDialog.Accepted:
-                wallet_path = openWalletDialog.walletFileEdit.text()
+                wallet_file_text = openWalletDialog.walletFileEdit.text()
+                wallet_path = wallet_file_text
                 if not os.path.isabs(wallet_path):
                     wallet_path = os.path.join(jm_single().datadir, 'wallets', wallet_path)
-                
+
                 try:
-                    walletLoaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text(), rethrow=True)
+                    wallet_loaded = mainWindow.loadWalletFromBlockchain(wallet_path, openWalletDialog.passphraseEdit.text(), rethrow=True)
                 except Exception as e:
-                    openWalletDialog.errorMessageLabel.setText(str(e))
+                    error_text = str(e)
             else:
                 break
 
