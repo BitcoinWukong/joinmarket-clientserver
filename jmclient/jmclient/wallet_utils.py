@@ -161,7 +161,7 @@ class WalletViewBase(object):
 
 class WalletViewEntry(WalletViewBase):
     def __init__(self, wallet_path_repr, account, address_type, aindex, addr, amounts,
-                 used = 'new', serclass=str, priv=None, custom_separator=None,
+                 status = 'new', serclass=str, priv=None, custom_separator=None,
                  label=None):
         super().__init__(wallet_path_repr, serclass=serclass,
                          custom_separator=custom_separator)
@@ -177,14 +177,14 @@ class WalletViewEntry(WalletViewBase):
         self.unconfirmed_amount, self.confirmed_amount = amounts
         #note no validation here
         self.private_key = priv
-        self.used = used
+        self.status = status
         self.label = label
 
     def is_locked(self):
-        return "[LOCKED]" in self.used
+        return "[LOCKED]" in self.status
 
     def is_frozen(self):
-        return "[FROZEN]" in self.used
+        return "[FROZEN]" in self.status
 
     def get_balance(self, include_unconf=True):
         """Overwrites base class since no children
@@ -200,11 +200,11 @@ class WalletViewEntry(WalletViewBase):
         left = self.serialize_wallet_position()
         addr = self.serialize_address()
         amounts = self.serialize_amounts()
-        used = self.serialize_used()
+        status = self.serialize_status()
         label = self.serialize_label()
         extradata = self.serialize_extra_data()
         return self.serclass(self.separator.join([
-            left, addr, amounts, used, label, extradata]))
+            left, addr, amounts, status, label, extradata]))
 
     def serialize_json(self):
         return {"hd_path": self.wallet_path_repr,
@@ -226,8 +226,8 @@ class WalletViewEntry(WalletViewBase):
                                       "not yet implemented.")
         return self.serclass("{0:.08f}".format(self.unconfirmed_amount/1e8))
 
-    def serialize_used(self):
-        return self.serclass(self.used)
+    def serialize_status(self):
+        return self.serclass(self.status)
 
     def serialize_label(self):
         if self.label:
@@ -396,14 +396,14 @@ def get_imported_privkey_branch(wallet_service, m, showprivkey):
             include_disabled=True)[m].values():
             if script == data['script']:
                 balance += data['value']
-        used = ('used' if balance > 0.0 else 'empty')
+        status = ('used' if balance > 0.0 else 'empty')
         if showprivkey:
             wip_privkey = wallet_service.get_wif_path(path)
         else:
             wip_privkey = ''
         entries.append(WalletViewEntry(wallet_service.get_path_repr(path), m, -1,
                                        0, addr, [balance, balance],
-                                       used=used, priv=wip_privkey))
+                                       status=status, priv=wip_privkey))
 
     if entries:
         return WalletViewBranch("m/0", m, -1, branchentries=entries)
@@ -539,10 +539,10 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 else:
                     privkey = ''
                 if (displayall or balance > 0 or
-                        (not hidenewaddr and status == 'new' and address_type == 0)):
+                        (status == 'new' and address_type == 0)):
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k, addr,
-                        [balance, balance], priv=privkey, used=status, label=label))
+                        [balance, balance], priv=privkey, status=status, label=label))
             wallet_service.set_next_index(m, address_type, unused_index)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
             branchlist.append(WalletViewBranch(path, m, address_type, entrylist,
@@ -582,7 +582,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 if displayall or balance > 0:
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k,
-                        addr, [balance, balance], priv=privkey, used=status,
+                        addr, [balance, balance], priv=privkey, status=status,
                         label=label))
             xpub_key = wallet_service.get_bip32_pub_export(m, address_type)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
@@ -622,7 +622,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 if displayall or balance > 0:
                     entrylist.append(WalletViewEntryBurnOutput(path_repr, m,
                         address_type, k, output, [balance, balance],
-                        priv=privkey, used=status))
+                        priv=privkey, status=status))
             wallet_service.set_next_index(m, address_type, unused_index)
 
             xpub_key = wallet_service.get_bip32_pub_export(m, address_type)
