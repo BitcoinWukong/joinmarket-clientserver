@@ -21,8 +21,7 @@ from jmclient import Taker, jm_single, \
     create_wallet, get_max_cj_fee_values, \
     StorageError, StoragePasswordError, JmwalletdWebSocketServerFactory, \
     JmwalletdWebSocketServerProtocol, RetryableStorageError, \
-    SegwitWalletFidelityBonds, wallet_gettimelockaddress, \
-    YieldGeneratorServiceSetupFailed
+    SegwitWalletFidelityBonds, wallet_gettimelockaddress
 from jmbase.support import get_log
 
 jlog = get_log()
@@ -82,6 +81,11 @@ class ServiceNotStarted(Exception):
 # raised when a requested transaction did
 # not successfully broadcast.
 class TransactionFailed(Exception):
+    pass
+
+# raised when we tried to start a Maker,
+# but the wallet was empty/not enough.
+class NotEnoughCoinsForMaker(Exception):
     pass
 
 def get_ssl_context(cert_directory):
@@ -215,6 +219,8 @@ class JMWalletDaemon(Service):
         # Currently valid authorization tokens must be removed
         # from the daemon:
         self.cookie = None
+        if self.wss_factory:
+            self.wss_factory.valid_token = None
         # if the wallet-daemon is shut down, all services
         # it encapsulates must also be shut down.
         for name, service in self.services.items():
@@ -287,6 +293,12 @@ class JMWalletDaemon(Service):
         request.setResponseCode(409)
         return self.err(request, "Transaction failed.")
 
+    @app.handle_errors(NotEnoughCoinsForMaker)
+    def not_enough_coins(self, request, failure):
+        # as above, 409 may not be ideal
+        request.setResponseCode(409)
+        return self.err(request, "Maker could not start, no coins.")
+
     def check_cookie(self, request):
         #part after bearer is what we need
         try:
@@ -323,9 +335,17 @@ class JMWalletDaemon(Service):
         (currently THE wallet, daemon does not yet support multiple).
         This is maintained for 30 minutes currently, or until the user
         switches to a new wallet.
+        If an existing wallet_service was in place, it needs to be stopped.
         Here we must also register transaction update callbacks, to fire
         events in the websocket connection.
         """
+        if self.wallet_service:
+            # we allow a new successful authorization (with password)
+            # to shut down the currently running service(s), if there
+            # are any.
+            # This will stop all supporting services and wipe
+            # state (so wallet, maker service and cookie/token):
+            self.stopService()
         # any random secret is OK, as long as it is not deducible/predictable:
         secret_key = bintohex(os.urandom(16))
         encoded_token = jwt.encode({"wallet": wallet_name,
@@ -355,14 +375,16 @@ class JMWalletDaemon(Service):
         self.wallet_service.register_callbacks(
             [self.wss_factory.sendTxNotification], None)
         self.wallet_service.startService()
-        # now that the service is intialized, we want to
+        # now that the base WalletService is started, we want to
         # make sure that any websocket clients use the correct
-        # token:
+        # token. The wss_factory should have been created on JMWalletDaemon
+        # startup, so any failure to exist here is a logic error:
         self.wss_factory.valid_token = encoded_token
         # now that the WalletService instance is active and ready to
         # respond to requests, we return the status to the client:
         if('seedphrase' in kwargs):
             return make_jmwalletd_response(request,
+                        status=201,
                         walletname=self.wallet_name,
                         token=encoded_token,
                         seedphrase=kwargs.get('seedphrase'))
@@ -378,15 +400,22 @@ class JMWalletDaemon(Service):
         # TODO this may be updated.
         # It is also different in that the event loop must not shut down
         # when processing finishes.
-        assert fromtx is False
+
+        # This assertion is making sure that the callback is not a non-final
+        # schedule entry (see the comment above as to why). We accept
+        # either False or 'unconfirmed' since they can arrive in either order.
+        assert fromtx is not True
+
+        # reset our state on completion, we are no longer coinjoining:
+        self.taker = None
+
         if not res:
             jlog.info("Coinjoin did not complete successfully.")
         #Should usually be unreachable, unless conf received out of order;
         #because we should stop on 'unconfirmed' for last (see above)
         else:
             jlog.info("Coinjoin completed correctly")
-        # reset our state on completion, we are no longer coinjoining:
-        self.taker = None
+
         # Note; it's technically possible for this to return False if somehow
         # we are currently in inactive state, but it isn't an error:
         self.activate_coinjoin_state(CJ_NOT_RUNNING)
@@ -541,15 +570,27 @@ class JMWalletDaemon(Service):
                 self.activate_coinjoin_state(CJ_NOT_RUNNING)
             def setup():
                 # note this returns False if we cannot update the state.
-                return self.activate_coinjoin_state(CJ_MAKER_RUNNING)
+                if not self.activate_coinjoin_state(CJ_MAKER_RUNNING):
+                    raise ServiceAlreadyStarted()
+            # don't even start up the service if there aren't any coins
+            # to offer:
+            def setup_sanitycheck_balance():
+                # note: this will only be non-zero if coins are confirmed.
+                # note: a call to start_maker necessarily is after a successful
+                # sync has already happened (this is different from CLI yg).
+                # note: an edge case of dusty amounts is lost here; it will get
+                # picked up by Maker.try_to_create_my_orders().
+                if not len(self.wallet_service.get_balance_by_mixdepth(
+                    verbose=False, minconfs=1)) > 0:
+                    raise NotEnoughCoinsForMaker()
+
             self.services["maker"].addCleanup(cleanup)
             self.services["maker"].addSetup(setup)
+            self.services["maker"].addSetup(setup_sanitycheck_balance)
             # Service startup now checks and updates coinjoin state:
-            try:
-                self.services["maker"].startService()
-            except YieldGeneratorServiceSetupFailed:
-                raise ServiceAlreadyStarted()
-            return make_jmwalletd_response(request)
+            self.services["maker"].startService()
+
+            return make_jmwalletd_response(request, status=202)
 
         @app.route('/wallet/<string:walletname>/maker/stop', methods=['GET'])
         def stop_maker(self, request, walletname):
@@ -562,7 +603,7 @@ class JMWalletDaemon(Service):
                CJ_MAKER_RUNNING:
                 raise ServiceNotStarted()
             self.services["maker"].stopService()
-            return make_jmwalletd_response(request)
+            return make_jmwalletd_response(request, status=202)
 
         @app.route('/wallet/<string:walletname>/lock', methods=['GET'])
         def lockwallet(self, request, walletname):
@@ -631,6 +672,9 @@ class JMWalletDaemon(Service):
         def unlockwallet(self, request, walletname):
             """ If a user succeeds in authenticating and opening a
             wallet, we start the corresponding wallet service.
+            Notice that in the case the user fails for any reason,
+            then any existing wallet service, and corresponding token,
+            will remain active.
             """
             print_req(request)
             assert isinstance(request.content, BytesIO)
@@ -638,29 +682,25 @@ class JMWalletDaemon(Service):
             if not auth_json:
                 raise InvalidRequestFormat()
             password = auth_json["password"]
-            if self.wallet_service is None:
-                wallet_path = get_wallet_path(walletname, None)
-                try:
-                    wallet = open_test_wallet_maybe(
-                            wallet_path, walletname, 4,
-                            password=password.encode("utf-8"),
-                            ask_for_password=False)
-                except StoragePasswordError:
-                    raise NotAuthorized()
-                except RetryableStorageError:
-                    # .lock file exists
-                    raise LockExists()
-                except StorageError:
-                    # wallet is not openable
-                    raise NoWalletFound()
-                except Exception:
-                    # wallet file doesn't exist or is wrong format
-                    raise NoWalletFound()
-                return self.initialize_wallet_service(request, wallet, walletname)
-            else:
-                jlog.warn('Tried to unlock wallet, but one is already unlocked.')
-                jlog.warn('Currently only one active wallet at a time is supported.')
-                raise WalletAlreadyUnlocked()
+
+            wallet_path = get_wallet_path(walletname, None)
+            try:
+                wallet = open_test_wallet_maybe(
+                        wallet_path, walletname, 4,
+                        password=password.encode("utf-8"),
+                        ask_for_password=False)
+            except StoragePasswordError:
+                raise NotAuthorized()
+            except RetryableStorageError:
+                # .lock file exists
+                raise LockExists()
+            except StorageError:
+                # wallet is not openable
+                raise NoWalletFound()
+            except Exception:
+                # wallet file doesn't exist or is wrong format
+                raise NoWalletFound()
+            return self.initialize_wallet_service(request, wallet, walletname)
 
         #This route should return list of current wallets created.
         @app.route('/wallet/all', methods=['GET'])
@@ -772,8 +812,21 @@ class JMWalletDaemon(Service):
             utxos_response = self.get_listutxos_response(utxos)
             return make_jmwalletd_response(request, utxos=utxos_response)
 
+        # route to abort a currently running coinjoin
+        @app.route('/wallet/<string:walletname>/taker/stop', methods=['GET'])
+        def stopcoinjoin(self, request, walletname):
+            self.check_cookie(request)
+            if not self.wallet_service:
+                raise NoWalletFound()
+            if not self.wallet_name == walletname:
+                raise InvalidRequestFormat()
+            if not self.coinjoin_state == CJ_TAKER_RUNNING:
+                raise ServiceNotStarted()
+            self.taker_finished(False)
+            return make_jmwalletd_response(request, status=202)
+
         #route to start a coinjoin transaction
-        @app.route('/wallet/<string:walletname>/taker/coinjoin',methods=['POST'])
+        @app.route('/wallet/<string:walletname>/taker/coinjoin', methods=['POST'])
         def docoinjoin(self, request, walletname):
             self.check_cookie(request)
             if not self.wallet_service:
@@ -827,4 +880,14 @@ class JMWalletDaemon(Service):
 
             _, self.coinjoin_connection = start_reactor(dhost, dport,
                                 self.clientfactory, rs=False)
-            return make_jmwalletd_response(request)
+            return make_jmwalletd_response(request, status=202)
+
+        @app.route('/wallet/<walletname>/getseed', methods=['GET'])
+        def getseed(self, request, walletname):
+            self.check_cookie(request)
+            if not self.wallet_service:
+                raise NoWalletFound()
+            if not self.wallet_name == walletname:
+                raise InvalidRequestFormat()
+            seedphrase, _ = self.wallet_service.get_mnemonic_words()
+            return make_jmwalletd_response(request, seedphrase=seedphrase)

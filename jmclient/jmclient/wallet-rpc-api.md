@@ -268,6 +268,7 @@ create and broadcast a transaction (without coinjoin)
 | ---- | ----------- |
 | 200 | transaction broadcast OK. |
 | 400 | Bad request format. |
+| 404 | Item not found. |
 | 401 | Unable to authorise the credentials that were supplied. |
 | 409 | Transaction failed to broadcast. |
 
@@ -286,7 +287,7 @@ Start the yield generator service.
 
 ##### Description
 
-Start the yield generator service with the configuration settings specified in the POST request. Note that if fidelity bonds are enabled in the wallet, and a timelock address has been generated, and then funded, the fidelity bond will automatically be advertised without any specific configuration in this request.
+Start the yield generator service with the configuration settings specified in the POST request. Note that if fidelity bonds are enabled in the wallet, and a timelock address has been generated, and then funded, the fidelity bond will automatically be advertised without any specific configuration in this request. Note that if the wallet does not have confirmed coins, or another taker or maker coinjoin service is already running, the maker will not start.
 
 ##### Parameters
 
@@ -301,6 +302,8 @@ Start the yield generator service with the configuration settings specified in t
 | 202 | The request has been submitted successfully for processing, but the processing has not been completed. |
 | 400 | Bad request format. |
 | 401 | Unable to authorise the credentials that were supplied. |
+| 404 | Item not found. |
+| 409 | Maker could not start without confirmed balance. |
 | 503 | The server is not ready to process the request. |
 
 ##### Security
@@ -333,6 +336,7 @@ stop the yield generator service
 | 202 | The request has been submitted successfully for processing, but the processing has not been completed. |
 | 400 | Bad request format. |
 | 401 | Unable to authorise the credentials that were supplied. |
+| 404 | Item not found. |
 
 ##### Security
 
@@ -367,6 +371,38 @@ initiate a coinjoin as taker
 | 404 | Item not found. |
 | 409 | Unable to complete request because config settings are missing. |
 | 503 | The server is not ready to process the request. |
+
+##### Security
+
+| Security Schema | Scopes |
+| --- | --- |
+| bearerAuth | |
+
+### /wallet/{walletname}/taker/stop
+
+#### GET
+##### Summary
+
+stop a running coinjoin attempt
+
+##### Description
+
+stop a running coinjoin attempt
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| walletname | path | name of wallet including .jmdat | Yes | string |
+
+##### Responses
+
+| Code | Description |
+| ---- | ----------- |
+| 202 | The request has been submitted successfully for processing, but the processing has not been completed. |
+| 400 | Bad request format. |
+| 401 | Unable to authorise the credentials that were supplied. |
+| 404 | Item not found. |
 
 ##### Security
 
@@ -431,6 +467,37 @@ Get the value of a specific config setting. Note values are always returned as s
 | 400 | Bad request format. |
 | 401 | Unable to authorise the credentials that were supplied. |
 | 409 | Unable to complete request because config settings are missing. |
+
+##### Security
+
+| Security Schema | Scopes |
+| --- | --- |
+| bearerAuth | |
+
+### /wallet/{walletname}/getseed
+
+#### GET
+##### Summary
+
+get the mnemonic recovery phrase with the optional passphrase
+
+##### Description
+
+Get the mnemonic recovery phrase with the optional passphrase. Not the response is a sentence with few line breaks.
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| walletname | path | name of the wallet including .jmdat | Yes | string |
+
+##### Responses
+
+| Code | Description |
+| ---- | ----------- |
+| 200 | seedphrase retrieved successfully |
+| 400 | Bad request format. |
+| 401 | Unable to authorise the credentials that were supplied. |
 
 ##### Security
 
@@ -543,6 +610,12 @@ Get the value of a specific config setting. Note values are always returned as s
 | Name | Type | Description | Required |
 | ---- | ---- | ----------- | -------- |
 | txinfo | object |  | Yes |
+
+#### GetSeedResponse
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| seedphrase | string |  | Yes |
 
 #### LockWalletResponse
 

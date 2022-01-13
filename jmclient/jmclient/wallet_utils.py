@@ -210,7 +210,9 @@ class WalletViewEntry(WalletViewBase):
         return {"hd_path": self.wallet_path_repr,
                 "address": self.serialize_address(),
                 "amount": self.serialize_amounts(),
-                "labels": self.serialize_extra_data()}
+                "status": self.serialize_status(),
+                "label": self.serialize_label(),
+                "extradata": self.serialize_extra_data()}
 
     def serialize_wallet_position(self):
         return self.wallet_path_repr.ljust(20)
@@ -431,6 +433,7 @@ def wallet_showutxos(wallet_service, showprivkey):
             tries_remaining = max(0, max_tries - tries)
             mixdepth = wallet_service.wallet.get_details(av['path'])[0]
             unsp[us] = {'address': av['address'],
+                       'path': wallet_service.get_path_repr(av['path']),
                        'label': av['label'] if av['label'] else "",
                        'value': av['value'],
                        'tries': tries, 'tries_remaining': tries_remaining,
@@ -1167,8 +1170,7 @@ def wallet_signmessage(wallet, hdpath, message, out_str=True):
         return "Error: no message specified"
 
     path = wallet.path_repr_to_path(hdpath)
-    sig = wallet.sign_message(msg, path)
-    addr = wallet.get_address_from_path(path)
+    addr, sig = wallet.sign_message(msg, path)
     if not out_str:
         return (sig, message, addr)
     return ("Signature: {}\nMessage: {}\nAddress: {}\n"
