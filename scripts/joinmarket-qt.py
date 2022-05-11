@@ -1468,10 +1468,10 @@ class JMWalletTab(QWidget):
             txt = str(item.text(0))
             if validate_address(txt)[0]:
                 address_valid = True
-            if "EXTERNAL" in txt:
+            if "xpub" in txt or "ypub" in txt or "zpub" in txt:
                 parsed = txt.split()
                 if len(parsed) > 1:
-                    xpub = parsed[1]
+                    xpub = parsed[-1]
                     xpub_exists = True
 
         menu = QMenu()
