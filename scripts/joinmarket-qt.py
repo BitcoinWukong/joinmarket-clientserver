@@ -1468,9 +1468,10 @@ class JMWalletTab(QWidget):
             txt = str(item.text(0))
             if validate_address(txt)[0]:
                 address_valid = True
-            if "xpub" in txt or "ypub" in txt or "zpub" in txt:
-                parsed = txt.split()
-                if len(parsed) > 1:
+            
+            parsed = txt.split()
+            if len(parsed) > 1:
+                if parsed[-1].startswith("xpub") or parsed[-1].startswith("ypub") or parsed[-1].startswith("zpub"):
                     xpub = parsed[-1]
                     xpub_exists = True
 
