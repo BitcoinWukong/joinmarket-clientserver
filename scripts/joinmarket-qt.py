@@ -1544,8 +1544,10 @@ class JMWalletTab(QWidget):
 
         for mixdepth in range(max_mixdepth_count):
             mdbalance = mbalances[mixdepth]
+            account_xpub = xpubs[mixdepth][-1]
+
             m_item = QTreeWidgetItem(["Mixdepth " + str(mixdepth) + " , balance: " +
-                                      mdbalance, '', '', '', ''])
+                                      mdbalance + ", " + account_xpub, '', '', '', ''])
             self.walletTree.addChild(m_item)
 
             # if expansion states existed, reinstate them:
@@ -2327,6 +2329,8 @@ def get_wallet_printout(wallet_service):
                                     entry.serialize_amounts(),
                                     entry.serialize_status(),
                                     entry.serialize_label()])
+        # Append the account xpub to the end of the list                                    
+        xpubs[j].append(acct.xpub)
     # in case the wallet is not yet synced, don't return an incorrect
     # 0 balance, but signal incompleteness:
     total_bal = walletview.get_fmt_balance() if wallet_service.synced else None
