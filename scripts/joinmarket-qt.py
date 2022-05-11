@@ -2365,7 +2365,12 @@ def get_wallet_printout(wallet_service):
                                     entry.serialize_status(),
                                     entry.serialize_label()])
         # Append the account xpub to the end of the list                                    
-        xpubs[j].append(acct.xpub)
+        FBONDS_PUBKEY_PREFIX = "fbonds-mpk-"
+        account_xpub = acct.xpub
+        if account_xpub.startswith(FBONDS_PUBKEY_PREFIX):
+            account_xpub = account_xpub[len(FBONDS_PUBKEY_PREFIX):]
+        xpubs[j].append(account_xpub)
+
     # in case the wallet is not yet synced, don't return an incorrect
     # 0 balance, but signal incompleteness:
     total_bal = walletview.get_fmt_balance() if wallet_service.synced else None
