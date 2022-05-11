@@ -1468,10 +1468,10 @@ class JMWalletTab(QWidget):
             txt = str(item.text(0))
             if validate_address(txt)[0]:
                 address_valid = True
-            if "EXTERNAL" in txt:
+            if "xpub" in txt or "ypub" in txt or "zpub" in txt:
                 parsed = txt.split()
                 if len(parsed) > 1:
-                    xpub = parsed[1]
+                    xpub = parsed[-1]
                     xpub_exists = True
 
         menu = QMenu()
@@ -2365,7 +2365,23 @@ def get_wallet_printout(wallet_service):
                                     entry.serialize_status(),
                                     entry.serialize_label()])
         # Append the account xpub to the end of the list                                    
-        xpubs[j].append(acct.xpub)
+        FBONDS_PUBKEY_PREFIX = "fbonds-mpk-"
+        account_xpub = acct.xpub
+        if account_xpub.startswith(FBONDS_PUBKEY_PREFIX):
+            account_xpub = account_xpub[len(FBONDS_PUBKEY_PREFIX):]
+        if display_ypub_zpub():
+            # Convert xpub to ypub or zpub for display
+            if is_segwit_mode():
+                if is_native_segwit_mode():
+                    # zpub format
+                    zpub_prefix = b'\x04\xb2\x47\x46'
+                    account_xpub = base58.b58encode_check(zpub_prefix + base58.b58decode_check(account_xpub)[4:]).decode('ascii')
+                else:
+                    # ypub format
+                    ypub_prefix = b'\x04\x9d\x7c\xb2'
+                    account_xpub = base58.b58encode_check(ypub_prefix + base58.b58decode_check(account_xpub)[4:]).decode('ascii')
+        xpubs[j].append(account_xpub)
+
     # in case the wallet is not yet synced, don't return an incorrect
     # 0 balance, but signal incompleteness:
     total_bal = walletview.get_fmt_balance() if wallet_service.synced else None
