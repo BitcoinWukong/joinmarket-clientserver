@@ -986,6 +986,9 @@ def is_native_segwit_mode():
         return False
     return jm_single().config.get('POLICY', 'native') != 'false'
 
+def display_ypub_zpub():
+    return jm_single().config.get('POLICY', 'display_ypub_zpub') != 'false'
+
 def process_shutdown(mode="command-line"):
     if mode=="command-line":
         from twisted.internet import reactor

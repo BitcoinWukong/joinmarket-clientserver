@@ -23,6 +23,7 @@ Some widgets copied and modified from https://github.com/spesmilo/electrum
 import sys, datetime, os, logging
 import platform, json, threading, time
 from optparse import OptionParser
+import base58
 
 from PySide2 import QtCore
 
@@ -73,7 +74,7 @@ from jmclient import load_program_config, get_network, update_persist_config,\
     parse_payjoin_setup, send_payjoin, JMBIP78ReceiverManager, \
     detect_script_type, general_custom_change_warning, \
     nonwallet_custom_change_warning, sweep_custom_change_warning, EngineError,\
-    TYPE_P2WPKH, check_and_start_tor
+    TYPE_P2WPKH, check_and_start_tor, is_segwit_mode, is_native_segwit_mode, display_ypub_zpub
 from jmclient.wallet import BaseWallet
 
 from qtsupport import ScheduleWizard, TumbleRestartWizard, config_tips,\
@@ -1576,7 +1577,20 @@ class JMWalletTab(QWidget):
                     continue
 
                 if address_type == BaseWallet.ADDRESS_TYPE_EXTERNAL:
-                    heading = "EXTERNAL " + xpubs[mixdepth][address_type]
+                    xpub = xpubs[mixdepth][address_type]
+                    if display_ypub_zpub():
+                        # Convert xpub to ypub or zpub for display
+                        if is_segwit_mode():
+                            if is_native_segwit_mode():
+                                # zpub format
+                                zpub_prefix = b'\x04\xb2\x47\x46'
+                                xpub = base58.b58encode_check(zpub_prefix + base58.b58decode_check(xpub)[4:]).decode('ascii')
+                            else:
+                                # ypub format
+                                ypub_prefix = b'\x04\x9d\x7c\xb2'
+                                xpub = base58.b58encode_check(ypub_prefix + base58.b58decode_check(xpub)[4:]).decode('ascii')
+
+                    heading = "EXTERNAL " + xpub
                 elif address_type == BaseWallet.ADDRESS_TYPE_INTERNAL:
                     heading = "INTERNAL"
                 elif address_type == FidelityBondMixin.BIP32_TIMELOCK_ID:
