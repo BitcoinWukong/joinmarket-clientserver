@@ -2369,6 +2369,17 @@ def get_wallet_printout(wallet_service):
         account_xpub = acct.xpub
         if account_xpub.startswith(FBONDS_PUBKEY_PREFIX):
             account_xpub = account_xpub[len(FBONDS_PUBKEY_PREFIX):]
+        if display_ypub_zpub():
+            # Convert xpub to ypub or zpub for display
+            if is_segwit_mode():
+                if is_native_segwit_mode():
+                    # zpub format
+                    zpub_prefix = b'\x04\xb2\x47\x46'
+                    account_xpub = base58.b58encode_check(zpub_prefix + base58.b58decode_check(account_xpub)[4:]).decode('ascii')
+                else:
+                    # ypub format
+                    ypub_prefix = b'\x04\x9d\x7c\xb2'
+                    account_xpub = base58.b58encode_check(ypub_prefix + base58.b58decode_check(account_xpub)[4:]).decode('ascii')
         xpubs[j].append(account_xpub)
 
     # in case the wallet is not yet synced, don't return an incorrect
