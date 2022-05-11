@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from optparse import OptionParser
 from numbers import Integral
 from collections import Counter
-from itertools import islice
+from itertools import islice, chain
 from jmclient import (get_network, WALLET_IMPLEMENTATIONS, Storage, podle,
     jm_single, BitcoinCoreInterface, WalletError, BaseWallet,
     VolatileStorage, StoragePasswordError, is_segwit_mode, SegwitLegacyWallet,
@@ -48,7 +48,7 @@ The method is one of the following:
 (signmessage) Sign a message with the private key from an address in
     the wallet. Use with -H and specify an HD wallet path for the address.
 (signpsbt) Sign PSBT with JoinMarket wallet.
-(freeze) Freeze or un-freeze a specific utxo. Specify mixdepth with -m.
+(freeze) Freeze or un-freeze UTXOs. Specify mixdepth with -m.
 (gettimelockaddress) Obtain a timelocked address. Argument is locktime value as yyyy-mm. For example `2021-03`.
 (addtxoutproof) Add a tx out proof as metadata to a burner transaction. Specify path with
     -H and proof which is output of Bitcoin Core\'s RPC call gettxoutproof.
@@ -530,10 +530,12 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 xpub_key = ""
 
             unused_index = wallet_service.get_next_unused_index(m, address_type)
+            gap_addrs = []
             for k in range(unused_index + wallet_service.gap_limit):
                 path = wallet_service.get_path(m, address_type, k)
                 addr = wallet_service.get_address_from_path(path)
-
+                if k >= unused_index:
+                    gap_addrs.append(addr)
                 label = wallet_service.get_address_label(addr)
                 balance, status = get_addr_status(
                     path, utxos[m], utxos_enabled[m], k >= unused_index, address_type)
@@ -546,6 +548,15 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                     entrylist.append(WalletViewEntry(
                         wallet_service.get_path_repr(path), m, address_type, k, addr,
                         [balance, balance], priv=privkey, status=status, label=label))
+            # ensure that we never display un-imported addresses (this will generally duplicate
+            # the import of each new address gap limit times, but one importmulti call
+            # per mixdepth is cheap enough.
+            # This only applies to the external branch, because it only applies to addresses
+            # displayed for user deposit.
+            # It also does not apply to fidelity bond addresses which are created manually.
+            if address_type == BaseWallet.ADDRESS_TYPE_EXTERNAL and wallet_service.bci is not None:
+                wallet_service.bci.import_addresses(gap_addrs,
+                                                    wallet_service.get_wallet_name())
             wallet_service.set_next_index(m, address_type, unused_index)
             path = wallet_service.get_path_repr(wallet_service.get_path(m, address_type))
             branchlist.append(WalletViewBranch(path, m, address_type, entrylist,
@@ -1216,15 +1227,15 @@ def display_utxos_for_disable_choice_default(wallet_service, utxos_enabled,
 
     def default_user_choice(umax):
         jmprint("Choose an index 0 .. {} to freeze/unfreeze or "
-                "-1 to just quit.".format(umax))
+                "-1 to just quit, or -2 to (un)freeze all".format(umax))
         while True:
             try:
                 ret = int(input())
             except ValueError:
                 jmprint("Invalid choice, must be an integer.", "error")
                 continue
-            if not isinstance(ret, int) or ret < -1 or ret > umax:
-                jmprint("Invalid choice, must be between: -1 and {}, "
+            if ret < -2 or ret > umax:
+                jmprint("Invalid choice, must be between: -2 and {}, "
                         "try again.".format(umax), "error")
                 continue
             break
@@ -1248,6 +1259,8 @@ def display_utxos_for_disable_choice_default(wallet_service, utxos_enabled,
     chosen_idx = default_user_choice(max_id)
     if chosen_idx == -1:
         return None
+    if chosen_idx == -2:
+        return "all"
     # the return value 'disable' is the action we are going to take;
     # so it should be true if the utxos is currently unfrozen/enabled.
     disable = False if chosen_idx <= disabled_max else True
@@ -1305,14 +1318,21 @@ def wallet_freezeutxo(wallet_service, md, display_callback=None, info_callback=N
             utxos_enabled, utxos_disabled)
         if display_ret is None:
             break
-        (txid, index), disable = display_ret
-        wallet_service.disable_utxo(txid, index, disable)
-        if disable:
-            info_callback("Utxo: {} is now frozen and unavailable for spending."
-                          .format(fmt_utxo((txid, index))))
+        if display_ret == "all":
+            disable = (len(utxos_disabled) == 0)
+            info_callback("Setting all UTXOs to " + ("frozen" if disable else "unfrozen")
+                + " . . .")
+            for txid, index in chain(utxos_enabled, utxos_disabled):
+                wallet_service.disable_utxo(txid, index, disable)
         else:
-            info_callback("Utxo: {} is now unfrozen and available for spending."
-                          .format(fmt_utxo((txid, index))))
+            (txid, index), disable = display_ret
+            wallet_service.disable_utxo(txid, index, disable)
+            if disable:
+                info_callback("Utxo: {} is now frozen and unavailable for spending."
+                              .format(fmt_utxo((txid, index))))
+            else:
+                info_callback("Utxo: {} is now unfrozen and available for spending."
+                              .format(fmt_utxo((txid, index))))
     return "Done"
 
 
@@ -1553,7 +1573,7 @@ def get_wallet_path(file_name, wallet_dir=None):
 
 
 def read_password_stdin():
-    return sys.stdin.read().encode('utf-8')
+    return sys.stdin.readline().replace('\n','').encode('utf-8')
 
 
 def wallet_tool_main(wallet_root_path):

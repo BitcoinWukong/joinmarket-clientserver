@@ -53,7 +53,7 @@ qt5reactor.install()
 donation_address_url = "https://bitcoinprivacy.me/joinmarket-donations"
 
 #Version of this Qt script specifically
-JM_GUI_VERSION = '27dev'
+JM_GUI_VERSION = '29dev'
 
 from jmbase import get_log, stop_reactor, set_custom_stop_reactor
 from jmbase.support import EXIT_FAILURE, utxo_to_utxostr,\
@@ -73,7 +73,7 @@ from jmclient import load_program_config, get_network, update_persist_config,\
     parse_payjoin_setup, send_payjoin, JMBIP78ReceiverManager, \
     detect_script_type, general_custom_change_warning, \
     nonwallet_custom_change_warning, sweep_custom_change_warning, EngineError,\
-    TYPE_P2WPKH
+    TYPE_P2WPKH, check_and_start_tor
 from jmclient.wallet import BaseWallet
 
 from qtsupport import ScheduleWizard, TumbleRestartWizard, config_tips,\
@@ -912,10 +912,10 @@ class SpendTab(QWidget):
                    daemon=daemon,
                    gui=True)
         else:
-            #This will re-use IRC connections in background (daemon), no restart
+            #This will re-use message channels in background (daemon), no restart
             self.clientfactory.getClient().client = self.taker
             self.clientfactory.getClient().clientStart()
-        mainWindow.statusBar().showMessage("Connecting to IRC ...")
+        mainWindow.statusBar().showMessage("Connecting to message channels ...")
 
     def takerInfo(self, infotype, infomsg):
         if infotype == "INFO":
@@ -1211,21 +1211,21 @@ class SpendTab(QWidget):
                 if reply == QMessageBox.No:
                     return False
 
-            change_spk = mainWindow.wallet_service.addr_to_script(change_addr)
-            engine_recognized = True
-            try:
-                change_addr_type = detect_script_type(change_spk)
-            except EngineError:
-                engine_recognized = False
-            wallet_type = mainWindow.wallet_service.TYPE
-            if (not engine_recognized) or (
-                change_addr_type != wallet_type and makercount > 0):
-                reply = JMQtMessageBox(self,
+            if makercount > 0:
+                engine_recognized = True
+                try:
+                    change_addr_type = mainWindow.wallet_service.get_outtype(
+                        change_addr)
+                except EngineError:
+                    engine_recognized = False
+                wallet_type = mainWindow.wallet_service.get_txtype()
+                if not engine_recognized or change_addr_type != wallet_type:
+                    reply = JMQtMessageBox(self,
                                        nonwallet_custom_change_warning,
                                        mbtype='question',
                                        title="Warning")
-                if reply == QMessageBox.No:
-                    return False
+                    if reply == QMessageBox.No:
+                        return False
 
         return True
 
@@ -2391,6 +2391,8 @@ if not jm_single().config.get("POLICY", "segwit") == "true":
     sys.exit(EXIT_FAILURE)
 
 update_config_for_gui()
+
+check_and_start_tor()
 
 def onTabChange(i):
     """ Respond to change of tab.

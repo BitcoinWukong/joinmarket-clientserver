@@ -7,8 +7,9 @@ from .enc_wrapper import (as_init_encryption, init_keypair, init_pubkey,
 from .protocol import (COMMAND_PREFIX, ORDER_KEYS, NICK_HASH_LENGTH,
                        NICK_MAX_ENCODED, JM_VERSION, JOINMARKET_NICK_HEADER,
                        COMMITMENT_PREFIXES)
-from .irc import IRCMessageChannel
 
+from .irc import IRCMessageChannel
+from .onionmc import OnionMessageChannel
 from jmbase import (is_hs_uri, get_tor_agent, JMHiddenService,
                     get_nontor_agent, BytesProducer, wrapped_urlparse,
                     bdict_sdict_convert, JMHTTPResource)
@@ -66,6 +67,12 @@ def taker_only(func):
         return None
     return func_wrapper
 
+# the location of the file
+blacklist_location = None
+def set_blacklist_location(location):
+    global blacklist_location
+    blacklist_location = location
+
 def check_utxo_blacklist(commitment, persist=False):
     """Compare a given commitment with the persisted blacklist log file,
     which is hardcoded to this directory and name 'commitmentlist' (no
@@ -75,7 +82,7 @@ def check_utxo_blacklist(commitment, persist=False):
     If flagged, persist the usage of this commitment to the above file.
     """
     #TODO format error checking?
-    fname = "commitmentlist"
+    fname = blacklist_location
     if os.path.isfile(fname):
         with open(fname, "rb") as f:
             blacklisted_commitments = [x.decode('ascii').strip() for x in f.readlines()]
@@ -468,7 +475,7 @@ class JMDaemonServerProtocol(amp.AMP, OrderbookWatch):
         self.factory = factory
         self.jm_state = 0
         self.restart_mc_required = False
-        self.irc_configs = None
+        self.chan_configs = None
         self.mcc = None
         #Default role is TAKER; must be overriden to MAKER in JMSetup message.
         self.role = "TAKER"
@@ -497,8 +504,8 @@ class JMDaemonServerProtocol(amp.AMP, OrderbookWatch):
         d.addErrback(self.defaultErrback)
 
     @JMInit.responder
-    def on_JM_INIT(self, bcsource, network, irc_configs, minmakers,
-                   maker_timeout_sec, dust_threshold):
+    def on_JM_INIT(self, bcsource, network, chan_configs, minmakers,
+                   maker_timeout_sec, dust_threshold, blacklist_location):
         """Reads in required configuration from client for a new
         session; feeds back joinmarket messaging protocol constants
         (required for nick creation).
@@ -507,23 +514,29 @@ class JMDaemonServerProtocol(amp.AMP, OrderbookWatch):
         """
         self.maker_timeout_sec = maker_timeout_sec
         self.minmakers = minmakers
+        set_blacklist_location(blacklist_location)
         self.dust_threshold = int(dust_threshold)
         #(bitcoin) network only referenced in channel name construction
         self.network = network
-        if irc_configs == self.irc_configs:
+        if chan_configs == self.chan_configs:
             self.restart_mc_required = False
             log.msg("New init received did not require a new message channel"
                     " setup.")
         else:
-            if self.irc_configs:
+            if self.chan_configs:
                 #close the existing connections
                 self.mc_shutdown()
-            self.irc_configs = irc_configs
+            self.chan_configs = chan_configs
             self.restart_mc_required = True
-            mcs = [IRCMessageChannel(c,
-                                     daemon=self,
-                                     realname='btcint=' + bcsource)
-                   for c in self.irc_configs]
+            mcs = []
+            for c in self.chan_configs:
+                if "type" in c and c["type"] == "onion":
+                    mcs.append(OnionMessageChannel(c, daemon=self))
+                else:
+                    # default is IRC; TODO allow others
+                    mcs.append(IRCMessageChannel(c,
+                                                 daemon=self,
+                                                 realname='btcint=' + bcsource))
             self.mcc = MessageChannelCollection(mcs)
             OrderbookWatch.set_msgchan(self, self.mcc)
             #register taker-specific msgchan callbacks here
@@ -939,7 +952,8 @@ class JMDaemonServerProtocol(amp.AMP, OrderbookWatch):
         for a new transaction; effectively means any previous
         incomplete transaction is wiped.
         """
-        self.jm_state = 0  #uninited
+        self.jm_state = 0
+        self.mcc.set_nick(nick)
         if self.restart_mc_required:
             self.mcc.run()
             self.restart_mc_required = False
@@ -947,7 +961,6 @@ class JMDaemonServerProtocol(amp.AMP, OrderbookWatch):
             #if we are not restarting the MC,
             #we must simulate the on_welcome message:
             self.on_welcome()
-        self.mcc.set_nick(nick)
 
     def transfer_commitment(self, commit):
         """Send this commitment via privmsg to one (random)

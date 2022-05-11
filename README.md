@@ -30,19 +30,20 @@ For a quick introduction to Joinmarket you can watch [this demonstration](https:
 
 ### Quickstart - RECOMMENDED INSTALLATION METHOD (Linux and macOS only)
 
-Once you've downloaded this repo, either as a tar/zip file, and extracted it, or via `git clone`:
+Download the latest [release](https://github.com/Joinmarket-Org/joinmarket-clientserver/releases) as tar or zip, and extract it.
 
-Make sure to validate the signature on the tar/zip file provided on the [release page](https://github.com/Joinmarket-Org/joinmarket-clientserver/releases),
-or check the signature in git if you install that way using `git log --show-signature`.
+Make sure to validate the signature on the tar/zip file provided with the [release](https://github.com/Joinmarket-Org/joinmarket-clientserver/releases) (or check the signature in git if you install that way using `git log --show-signature`).
 
-**macOS users**: Make sure that you have Homebrew and Apple's Command Line Tools installed.
+(**macOS users**: Make sure that you have Homebrew and Apple's Command Line Tools installed.)
 
     ./install.sh
-    (follow instructions on screen; provide sudo password when prompted)
+
+(There are options you can apply to the installation - see `./install.sh -?`. But the defaults should work.)
+
+Follow instructions on screen; provide sudo password when prompted, then when finished:
+
     source jmvenv/bin/activate
     cd scripts
-
-(You can add `--develop` as an extra flag to `install.sh` to make the Joinmarket code editable in-place.)
 
 You can optionally install a Qt GUI application, you will be prompted to choose this during installation.
 
@@ -55,6 +56,7 @@ Alternative to this "quickstart": follow the [install guide](docs/INSTALL.md).
 ### More installation guides
 
 * [Installation on Windows](docs/INSTALL.md#installation-on-windows).
+* [Installation with Docker](docs/INSTALL.md#docker-installation)
 * [Installation guide for RaspiBlitz](https://github.com/openoms/bitcoin-tutorials/blob/master/joinmarket/README.md).
 * [Installation guide for RaspiBolt](https://github.com/kristapsk/raspibolt-extras/blob/master/joinmarket.md).
 * [Installation guide for Qubes+Whonix](https://github.com/qubenix/qubes-whonix-bitcoin/blob/master/1_joinmarket.md).
@@ -110,6 +112,7 @@ Instructions for developers for testing [here](docs/TESTING.md). If you want to 
 + Bitcointalk thread: https://bitcointalk.org/index.php?topic=919116.msg10096563
 
 + Twitter: https://twitter.com/joinmarket
+https://twitter3e4tixl4xyajtrzo62zg5vztmjuricljdp2c5kshju4avyoid.onion/joinmarket
 
 + Telegram: https://t.me/joinmarketorg
 

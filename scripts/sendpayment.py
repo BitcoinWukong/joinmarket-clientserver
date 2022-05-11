@@ -18,7 +18,7 @@ from jmclient import Taker, load_program_config, get_schedule,\
     get_sendpayment_parser, get_max_cj_fee_values, check_regtest, \
     parse_payjoin_setup, send_payjoin, general_custom_change_warning, \
     nonwallet_custom_change_warning, sweep_custom_change_warning, \
-    detect_script_type, EngineError
+    EngineError, check_and_start_tor
 from twisted.python.log import startLogging
 from jmbase.support import get_log, jmprint, \
     EXIT_FAILURE, EXIT_ARGERROR
@@ -62,6 +62,8 @@ def main():
                 parser.error("Joinmarket sendpayment (coinjoin) needs arguments:"
                     " wallet, amount, destination address or wallet, bitcoin_uri.")
                 sys.exit(EXIT_ARGERROR)
+
+    check_and_start_tor()
 
     #without schedule file option, use the arguments to create a schedule
     #of a single transaction
@@ -229,14 +231,13 @@ def main():
             if not options.answeryes and input(
                 general_custom_change_warning + " (y/n):")[0] != "y":
                 sys.exit(EXIT_ARGERROR)
-            change_spk = wallet_service.addr_to_script(custom_change)
             engine_recognized = True
             try:
-                change_addr_type = detect_script_type(change_spk)
+                change_addr_type = wallet_service.get_outtype(custom_change)
             except EngineError:
                 engine_recognized = False
             if (not engine_recognized) or (
-                change_addr_type != wallet_service.TYPE):
+                change_addr_type != wallet_service.get_txtype()):
                 if not options.answeryes and input(
                     nonwallet_custom_change_warning + " (y/n):")[0] != "y":
                     sys.exit(EXIT_ARGERROR)

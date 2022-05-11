@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(name='joinmarketbitcoin',
-      version='0.9.5dev',
+      version='0.9.7dev',
       description='Joinmarket client library for Bitcoin coinjoins',
       url='https://github.com/JoinMarket-Org/joinmarket-clientserver/tree/master/jmbitcoin',
       author='',
@@ -10,5 +10,5 @@ setup(name='joinmarketbitcoin',
       license='GPL',
       packages=['jmbitcoin'],
       python_requires='>=3.6',
-      install_requires=['python-bitcointx>=1.1.1.post0', 'pyaes', 'urldecode'],
+      install_requires=['python-bitcointx==1.1.3', 'pyaes', 'urldecode'],
       zip_safe=False)

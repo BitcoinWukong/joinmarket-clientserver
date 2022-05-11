@@ -24,7 +24,7 @@ if sys.version_info < (3, 7):
 
 from jmbase.support import EXIT_FAILURE
 from jmbase import bintohex
-from jmclient import FidelityBondMixin, get_interest_rate
+from jmclient import FidelityBondMixin, get_interest_rate, check_and_start_tor
 from jmclient.fidelity_bond import FidelityBondProof
 
 import sybil_attack_calculations as sybil
@@ -44,11 +44,14 @@ if 'matplotlib' in sys.modules:
     import matplotlib.pyplot as plt
 
 from jmclient import jm_single, load_program_config, calc_cj_fee, \
-     get_irc_mchannels, add_base_options
-from jmdaemon import OrderbookWatch, MessageChannelCollection, IRCMessageChannel
+     get_mchannels, add_base_options
+from jmdaemon import (OrderbookWatch, MessageChannelCollection,
+                      OnionMessageChannel, IRCMessageChannel)
 #TODO this is only for base58, find a solution for a client without jmbitcoin
 import jmbitcoin as btc
 from jmdaemon.protocol import *
+
+bond_exponent = None
 
 #Initial state: allow only SW offer types
 sw0offers = list(filter(lambda x: x[0:3] == 'sw0', offername_list))
@@ -114,7 +117,7 @@ def create_offerbook_table_heading(btc_unit, rel_unit):
                 col.format('txfee', 'Miner Fee Contribution / ' + btc_unit),
                 col.format('minsize', 'Minimum Size / ' + btc_unit),
                 col.format('maxsize', 'Maximum Size / ' + btc_unit),
-                col.format('bondvalue', 'Bond value / ' + btc_unit + '&#xb2;')
+                col.format('bondvalue', 'Bond value / ' + btc_unit + '<sup>' + bond_exponent + '</sup>')
             ]) + ' </tr>'
     return tableheading
 
@@ -122,7 +125,7 @@ def create_bonds_table_heading(btc_unit):
     tableheading = ('<table class="tftable sortable" border="1"><tr>'
         + '<th>Counterparty</th>'
         + '<th>UTXO</th>'
-        + '<th>Bond value / ' + btc_unit + '&#xb2;</th>'
+        + '<th>Bond value / ' + btc_unit + '<sup>' + bond_exponent + '</sup></th>'
         + '<th>Locktime</th>'
         + '<th>Locked coins / ' + btc_unit + '</th>'
         + '<th>Confirmation time</th>'
@@ -225,7 +228,7 @@ class OrderbookPageRequestHeader(http.server.SimpleHTTPRequestHandler):
                     "bond_value": fidelity_bond_value,
                     "locktime": parsed_bond.locktime,
                     "amount":  bond_utxo_data["value"],
-                    "address": bond_utxo_data["address"],
+                    "script": bintohex(bond_utxo_data["script"]),
                     "utxo_confirmations": bond_utxo_data["confirms"],
                     "utxo_confirmation_timestamp": bond_outpoint_conf_time,
                     "utxo_pub": bintohex(parsed_bond.utxo_pub),
@@ -418,7 +421,8 @@ class OrderbookPageRequestHeader(http.server.SimpleHTTPRequestHandler):
             + "how much would a sybil attacker starting now have to sacrifice to succeed in their"
             + " attack with 95% probability. Honest weight="
             + satoshi_to_unit_power(honest_weight, 2*unit_to_power[btc_unit]) + " " + btc_unit
-            + "&#xb2;<br/>Also assumes that takers are not price-sensitive and that their max "
+            + "<sup>" + bond_exponent + "</sup><br/>Also assumes that takers "
+            + "are not price-sensitive and that their max "
             + "coinjoin fee is configured high enough that they dont exclude any makers.")
         heading2 = "Sybil attacks from external enemies."
 
@@ -458,7 +462,7 @@ class OrderbookPageRequestHeader(http.server.SimpleHTTPRequestHandler):
         mainbody += ('<table class="tftable" border="1"><tr>'
             + '<th>Maker count</th>'
             + '<th>Success probability</th>'
-            + '<th>Foregone value / ' + btc_unit + '&#xb2;</th>'
+            + '<th>Foregone value / ' + btc_unit + '<sup>' + bond_exponent + '</sup></th>'
             + '</tr>'
         )
 
@@ -737,32 +741,32 @@ class ObBasic(OrderbookWatch):
     def request_orderbook(self):
         self.msgchan.request_orderbook()
 
-class ObIRCMessageChannel(IRCMessageChannel):
-    """A customisation of the message channel
-    to allow receipt of privmsgs without the
-    verification hooks in client-daemon communication."""
-    def on_privmsg(self, nick, message):
-        if len(message) < 2:
-            return
-        
-        if message[0] != COMMAND_PREFIX:
-            log.debug('message not a cmd')
-            return
-        cmd_string = message[1:].split(' ')[0]
-        if cmd_string not in offername_list:
-            log.debug('non-offer ignored')
-            return
-        #Ignore sigs (TODO better to include check)
-        sig = message[1:].split(' ')[-2:]
-        #reconstruct original message without cmd pref
-        rawmessage = ' '.join(message[1:].split(' ')[:-2])
-        for command in rawmessage.split(COMMAND_PREFIX):
-            _chunks = command.split(" ")
-            try:
-                self.check_for_orders(nick, _chunks)
-                self.check_for_fidelity_bond(nick, _chunks)
-            except:
-                pass
+
+"""An override for MessageChannel classes,
+to allow receipt of privmsgs without the
+verification hooks in client-daemon communication."""
+def on_privmsg(inst, nick, message):
+    if len(message) < 2:
+        return
+
+    if message[0] != COMMAND_PREFIX:
+        log.debug('message not a cmd')
+        return
+    cmd_string = message[1:].split(' ')[0]
+    if cmd_string not in offername_list:
+        log.debug('non-offer ignored')
+        return
+    #Ignore sigs (TODO better to include check)
+    sig = message[1:].split(' ')[-2:]
+    #reconstruct original message without cmd pref
+    rawmessage = ' '.join(message[1:].split(' ')[:-2])
+    for command in rawmessage.split(COMMAND_PREFIX):
+        _chunks = command.split(" ")
+        try:
+            inst.check_for_orders(nick, _chunks)
+            inst.check_for_fidelity_bond(nick, _chunks)
+        except:
+            pass
 
         
 def get_dummy_nick():
@@ -783,6 +787,7 @@ def get_dummy_nick():
     return nick
 
 def main():
+    global bond_exponent
     parser = OptionParser(
             usage='usage: %prog [options]',
             description='Runs a webservice which shows the orderbook.')
@@ -803,8 +808,26 @@ def main():
                       default=62601)
     (options, args) = parser.parse_args()
     load_program_config(config_path=options.datadir)
+    # needed to display notional units of FB valuation
+    bond_exponent = jm_single().config.get("POLICY", "bond_value_exponent")
+    try:
+        float(bond_exponent)
+    except ValueError:
+        log.error("Invalid entry for bond_value_exponent, should be decimal "
+                  "number: {}".format(bond_exponent))
+        sys.exit(EXIT_FAILURE)
+    check_and_start_tor()
     hostport = (options.host, options.port)
-    mcs = [ObIRCMessageChannel(c) for c in get_irc_mchannels()]
+    mcs = []
+    chan_configs = get_mchannels(mode="PASSIVE")
+    for c in chan_configs:
+        if "type" in c and c["type"] == "onion":
+            mcs.append(OnionMessageChannel(c))
+        else:
+            # default is IRC; TODO allow others
+            mcs.append(IRCMessageChannel(c))
+    IRCMessageChannel.on_privmsg = on_privmsg
+    OnionMessageChannel.on_privmsg = on_privmsg
     mcc = MessageChannelCollection(mcs)
     mcc.set_nick(get_dummy_nick())
     taker = ObBasic(mcc, hostport)

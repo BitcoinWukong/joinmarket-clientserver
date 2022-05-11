@@ -15,7 +15,7 @@ import os
 import sys
 from jmbase import (get_log, EXIT_FAILURE, hextobin, bintohex,
                     utxo_to_utxostr, bdict_sdict_convert)
-from jmclient import (jm_single, get_irc_mchannels,
+from jmclient import (jm_single, get_mchannels,
                       RegtestBitcoinCoreInterface,
                       SNICKERReceiver, process_shutdown)
 import jmbitcoin as btc
@@ -434,7 +434,7 @@ class JMMakerClientProtocol(JMClientProtocol):
                                                    "blockchain_source")
         #needed only for channel naming convention
         network = jm_single().config.get("BLOCKCHAIN", "network")
-        irc_configs = get_irc_mchannels()
+        chan_configs = self.factory.get_mchannels(mode="MAKER")
         #only here because Init message uses this field; not used by makers TODO
         minmakers = jm_single().config.getint("POLICY", "minimum_makers")
         maker_timeout_sec = jm_single().maker_timeout_sec
@@ -442,10 +442,11 @@ class JMMakerClientProtocol(JMClientProtocol):
         d = self.callRemote(commands.JMInit,
                             bcsource=blockchain_source,
                             network=network,
-                            irc_configs=irc_configs,
+                            chan_configs=chan_configs,
                             minmakers=minmakers,
                             maker_timeout_sec=maker_timeout_sec,
-                            dust_threshold=jm_single().DUST_THRESHOLD)
+                            dust_threshold=jm_single().DUST_THRESHOLD,
+                            blacklist_location=jm_single().commitment_list_location)
         self.defaultCallbacks(d)
 
     @commands.JMFidelityBondProofRequest.responder
@@ -600,7 +601,7 @@ class JMTakerClientProtocol(JMClientProtocol):
                                                    "blockchain_source")
         #needed only for channel naming convention
         network = jm_single().config.get("BLOCKCHAIN", "network")
-        irc_configs = get_irc_mchannels()
+        chan_configs = self.factory.get_mchannels(mode="TAKER")
         minmakers = jm_single().config.getint("POLICY", "minimum_makers")
         maker_timeout_sec = jm_single().maker_timeout_sec
 
@@ -613,10 +614,11 @@ class JMTakerClientProtocol(JMClientProtocol):
         d = self.callRemote(commands.JMInit,
                             bcsource=blockchain_source,
                             network=network,
-                            irc_configs=irc_configs,
+                            chan_configs=chan_configs,
                             minmakers=minmakers,
                             maker_timeout_sec=maker_timeout_sec,
-                            dust_threshold=jm_single().DUST_THRESHOLD)
+                            dust_threshold=jm_single().DUST_THRESHOLD,
+                            blacklist_location=jm_single().commitment_list_location)
         self.defaultCallbacks(d)
 
     def stallMonitor(self, schedule_index):
@@ -787,11 +789,20 @@ class JMClientProtocolFactory(protocol.ClientFactory):
 
     def setClient(self, client):
         self.proto_client = client
+
     def getClient(self):
         return self.proto_client
 
     def buildProtocol(self, addr):
         return self.protocol(self, self.client)
+
+    def get_mchannels(self, mode):
+        """ A transparent wrapper that allows override,
+        so that a script can return a customised set of
+        message channel configs; currently used for testing
+        multiple bots on regtest.
+        """
+        return get_mchannels(mode)
 
 def start_reactor(host, port, factory=None, snickerfactory=None,
                   bip78=False, jm_coinjoin=True, ish=True,

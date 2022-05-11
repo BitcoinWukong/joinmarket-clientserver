@@ -3,7 +3,11 @@ import io
 import logging
 import os
 import re
+import socket
 import sys
+import subprocess
+import atexit
+from signal import SIGINT
 
 from configparser import ConfigParser, NoOptionError
 
@@ -95,17 +99,20 @@ _DEFAULT_BONDLESS_MAKERS_ALLOWANCE = "0.125"
 defaultconfig = \
     """
 [DAEMON]
-#set to 1 to run the daemon service within this process;
-#set to 0 if the daemon is run separately (using script joinmarketd.py)
+# set to 1 to run the daemon service within this process;
+# set to 0 if the daemon is run separately (using script joinmarketd.py)
 no_daemon = 1
-#port on which daemon serves; note that communication still
-#occurs over this port even if no_daemon = 1
+
+# Port on which daemon serves; note that communication still
+# occurs over this port even if no_daemon = 1
 daemon_port = 27183
-#currently, running the daemon on a remote host is
-#*NOT* supported, so don't change this variable
+
+# Currently, running the daemon on a remote host is
+# *NOT* supported, so don't change this variable
 daemon_host = localhost
-#by default the client-daemon connection is plaintext, set to 'true' to use TLS;
-#for this, you need to have a valid (self-signed) certificate installed
+
+# by default the client-daemon connection is plaintext, set to 'true' to use TLS;
+# for this, you need to have a valid (self-signed) certificate installed
 use_ssl = false
 
 [BLOCKCHAIN]
@@ -114,82 +121,120 @@ use_ssl = false
 # Use 'no-blockchain' to run the ob-watcher.py script in scripts/obwatch without current access
 # to Bitcoin Core; note that use of this option for any other purpose is currently unsupported.
 blockchain_source = bitcoin-rpc
+
 # options: signet, testnet, mainnet
 # Note: for regtest, use network = testnet
 network = mainnet
+
 rpc_host = localhost
 # default ports are 8332 for mainnet, 18443 for regtest, 18332 for testnet, 38332 for signet
 rpc_port =
+
+# Use either rpc_user / rpc_password pair or rpc_cookie_file.
 rpc_user = bitcoin
 rpc_password = password
+#rpc_cookie_file =
+
+# rpc_wallet_file is Bitcoin Core wallet which is used for address and
+# transaction monitoring (it is watchonly, no private keys are stored there).
+# It must be created manually if does not exist, see docs/USAGE.md for more
+# information.
 rpc_wallet_file =
 
-## SERVER 1/4) Darkscience IRC (Tor, IP)
+[MESSAGING:onion]
+# onion based message channels must have the exact type 'onion'
+# (while the section name above can be MESSAGING:whatever), and there must
+# be only ONE such message channel configured (note the directory servers
+# can be multiple, below):
+type = onion
+
+socks5_host = localhost
+socks5_port = 9050
+
+# the tor control configuration.
+# for most people running the tor daemon
+# on Linux, no changes are required here:
+tor_control_host = localhost
+# or, to use a UNIX socket
+# tor_control_host = unix:/var/run/tor/control
+# note: port needs to be provided (but is ignored for UNIX socket)
+tor_control_port = 9051
+
+# the host/port actually serving the hidden service
+# (note the *virtual port*, that the client uses,
+# is hardcoded to as per below 'directory node configuration'.
+onion_serving_host = 127.0.0.1
+onion_serving_port = 8080
+
+# directory node configuration
+#
+# This is mandatory for directory nodes (who must also set their
+# own *.onion:port as the only directory in directory_nodes, below),
+# but NOT TO BE USED by non-directory nodes (which is you, unless
+# you know otherwise!), as it will greatly degrade your privacy.
+# (note the default is no value, don't replace it with "").
+hidden_service_dir =
+#
+# This is a comma separated list (comma can be omitted if only one item).
+# Each item has format host:port ; both are required, though port will
+# be 5222 if created in this code.
+# for MAINNET:
+directory_nodes = 3kxw6lf5vf6y26emzwgibzhrzhmhqiw6ekrek3nqfjjmhwznb2moonad.onion:5222,jmdirjmioywe2s5jad7ts6kgcqg66rj6wujj6q77n6wbdrgocqwexzid.onion:5222,bqlpq6ak24mwvuixixitift4yu42nxchlilrcqwk2ugn45tdclg42qid.onion:5222
+
+# for SIGNET (testing network):
+# directory_nodes = rr6f6qtleiiwic45bby4zwmiwjrj3jsbmcvutwpqxjziaydjydkk5iad.onion:5222,k74oyetjqgcamsyhlym2vgbjtvhcrbxr4iowd4nv4zk5sehw4v665jad.onion:5222,y2ruswmdbsfl4hhwwiqz4m3sx6si5fr6l3pf62d4pms2b53wmagq3eqd.onion:5222
+
+# This setting is ONLY for developer regtest setups,
+# running multiple bots at once. Don't alter it otherwise
+regtest_count = 0,0
+
+## IRC SERVER 1: Darkscience IRC (Tor, IP)
 ################################################################################
 [MESSAGING:server1]
+# by default the legacy format without a `type` field is
+# understood to be IRC, but you can, optionally, add it:
+# type = irc
 channel = joinmarket-pit
 port = 6697
 usessl = true
 
-# for traditional IP (default):
-host = irc.darkscience.net
-socks5 = false
+# For traditional IP:
+#host = irc.darkscience.net
+#socks5 = false
 
-# for Tor (recommended as clearnet alternative):
-#host = darkirc6tqgpnwd3blln3yfv5ckl47eg7llfxkmtovrv7c7iwohhb6ad.onion
-#socks5 = true
-#socks5_host = localhost
-#socks5_port = 9050
+# For Tor (recommended as clearnet alternative):
+host = darkirc6tqgpnwd3blln3yfv5ckl47eg7llfxkmtovrv7c7iwohhb6ad.onion
+socks5 = true
+socks5_host = localhost
+socks5_port = 9050
 
-## SERVER 2/4) hackint IRC (Tor, IP)
+## IRC SERVER 2: ILITA IRC (optional IRC alternate, Tor only)
 ################################################################################
 [MESSAGING:server2]
 channel = joinmarket-pit
+port = 6667
+usessl = false
+socks5 = true
+socks5_host = localhost
 
-# for traditional IP (default):
-host = irc.hackint.org
-port = 6697
-usessl = true
-socks5 = false
+host = ilitafrzzgxymv6umx2ux7kbz3imyeko6cnqkvy4nisjjj4qpqkrptid.onion
+socks5_port = 9050
 
-# for Tor (recommended as clearnet alternative):
+## IRC SERVER 3: (backup) hackint IRC (Tor, IP)
+################################################################################
+#[MESSAGING:server3]
+# channel = joinmarket-pit
+# For traditional IP:
+## host = irc.hackint.org
+## port = 6697
+## usessl = true
+## socks5 = false
+# For Tor (default):
 #host = ncwkrwxpq2ikcngxq3dy2xctuheniggtqeibvgofixpzvrwpa77tozqd.onion
 #port = 6667
 #usessl = false
 #socks5 = true
 #socks5_host = localhost
-#socks5_port = 9050
-
-## SERVER 3/4) Anarplex IRC (Tor, IP)
-################################################################################
-[MESSAGING:server3]
-channel = joinmarket-pit
-
-# for traditional IP (default):
-host = agora.anarplex.net
-port = 14716
-usessl = true
-socks5 = false
-
-# for Tor (recommended as clearnet alternative):
-#host = vxecvd6lc4giwtasjhgbrr3eop6pzq6i5rveracktioneunalgqlwfad.onion
-#port = 6667
-#usessl = false
-#socks5 = true
-#socks5_host = localhost
-#socks5_port = 9050
-
-## SERVER 4/4) ILITA IRC (Tor - disabled by default)
-################################################################################
-#[MESSAGING:server4]
-#channel = joinmarket-pit
-#port = 6667
-#usessl = false
-#socks5 = true
-#socks5_host = localhost
-
-# for Tor (recommended):
-#host = ilitafrzzgxymv6umx2ux7kbz3imyeko6cnqkvy4nisjjj4qpqkrptid.onion
 #socks5_port = 9050
 
 [LOGGING]
@@ -223,27 +268,31 @@ native = true
 # but don't forget to bump your miner fees!
 merge_algorithm = default
 
-# The fee estimate is based on a projection of how many satoshis
-# per kB are needed to get in one of the next N blocks, N set here
-# as the value of 'tx_fees'. This cost estimate is high if you set
+# The fee estimate is based on a projection of how many sats/kilo-vbyte
+# are needed to get in one of the next N blocks. N is set here as
+# the value of 'tx_fees'. This cost estimate is high if you set
 # N=1, so we choose 3 for a more reasonable figure, as our default.
-# You can also set your own fee/kb: any number higher than 1000 will
-# be interpreted as the fee in satoshi per kB that you wish to use
-# example: N=30000 will use 30000 sat/kB as a fee, while N=5
-# will use the estimate from your selected blockchain source
+# You can also set your own fee/kilo-vbyte: any number higher than 1 thousand
+# will be interpreted as the fee in sats/kilo-vbyte that you wish to use.
+#
+# Example: N=30000 will use 30 thousand sats/kilo-vbyte (30 sats/vB) as a fee,
+# while N=5 will use the 5 block estimate from your selected blockchain source.
 tx_fees = 3
 
 # Transaction fee rate variance factor, 0.2 means 20% variation around
 # any manually chosen values, so if you set tx_fees=10000 and
-# tx_fees_factor=0.2, it might use any value between 8000 and 12000 for
-# your transactions.
+# tx_fees_factor=0.2, it might use any value between 8 thousand and 12 thousand
+# for your transactions.
 tx_fees_factor = 0.2
 
 # For users getting transaction fee estimates over an API,
-# place a sanity check limit on the satoshis-per-kB to be paid.
+# place a sanity check limit on the sats/kilo-vbyte to be paid.
 # This limit is also applied to users using Core, even though
 # Core has its own sanity check limit, which is currently
-# 1,000,000 satoshis.
+# 1 million satoshis.
+#
+# Example: N=350000 will use 350 thousand sats/kilo-vbyte (350 sats/vB) as a
+# maximum fee.
 absurd_fee_per_kb = 350000
 
 # In decimal, the maximum allowable change either lower or
@@ -254,7 +303,7 @@ absurd_fee_per_kb = 350000
 #
 # Example: max_sweep_fee_change = 0.4, with tx_fees = 10000,
 # means actual fee rate achieved in the sweep can be as low
-# as 6000 sats/kilo-vbyte up to 14000 sats/kilo-vbyte.
+# as 6 thousand sats/kilo-vbyte up to 14 thousand sats/kilo-vbyte.
 #
 # If this is not achieved, the transaction is aborted. For tumbler,
 # it will then be retried until successful.
@@ -269,17 +318,17 @@ max_sweep_fee_change = 0.8
 #max_cj_fee_abs = x
 
 # Maximum relative coinjoin fee, in fractions of the coinjoin value
-# e.g. if your coinjoin amount is 2 btc (200000000 satoshi) and
+# e.g. if your coinjoin amount is 2 btc (200 million satoshi) and
 # max_cj_fee_rel = 0.001 (0.1%), the maximum fee allowed would
-# be 0.002 btc (200000 satoshi)
+# be 0.002 btc (200 thousand satoshi)
 #max_cj_fee_rel = x
 
-# the range of confirmations passed to the `listunspent` bitcoind RPC call
+# The range of confirmations passed to the `listunspent` bitcoind RPC call
 # 1st value is the inclusive minimum, defaults to one confirmation
 # 2nd value is the exclusive maximum, defaults to most-positive-bignum (Google Me!)
 # leaving it unset or empty defers to bitcoind's default values, ie [1, 9999999]
 #listunspent_args = []
-# that's what you should do, unless you have a specific reason, eg:
+# That's what you should do, unless you have a specific reason, eg:
 #  !!! WARNING !!! CONFIGURING THIS WHILE TAKING LIQUIDITY FROM
 #  !!! WARNING !!! THE PUBLIC ORDERBOOK LEAKS YOUR INPUT MERGES
 #  spend from unconfirmed transactions:  listunspent_args = [0]
@@ -295,15 +344,15 @@ max_sweep_fee_change = 0.8
 # self = broadcast transaction with your own bitcoin node.
 #
 # random-peer = everyone who took part in the coinjoin has a chance of broadcasting
-# note: if your counterparties do not support it, you will fall back
+# Note: if your counterparties do not support it, you will fall back
 # to broadcasting via your own node.
 #
 # not-self = never broadcast with your own bitcoin node.
-# note: in this case if your counterparties do not broadcast for you, you
+#
+# Note: in this case if your counterparties do not broadcast for you, you
 # will have to broadcast the tx manually (you can take the tx hex from the log
 # or terminal) via some other channel. It is not recommended to choose this
 # option when running schedules/tumbler.
-
 tx_broadcast = random-peer
 
 # If makers do not respond while creating a coinjoin transaction,
@@ -337,41 +386,52 @@ interest_rate = """ + _DEFAULT_INTEREST_RATE + """
 # A real number, i.e. 1 = 100%, 0.125 = 1/8 = 1 in every 8 makers on average will be bondless
 bondless_makers_allowance = """ + _DEFAULT_BONDLESS_MAKERS_ALLOWANCE + """
 
+# To (strongly) disincentivize Sybil behaviour, the value assessment of the bond
+# is based on the (time value of the bond)^x where x is the bond_value_exponent here,
+# where x > 1. It is a real number (so written as a decimal).
+bond_value_exponent = 1.3
+
 ##############################
-#THE FOLLOWING SETTINGS ARE REQUIRED TO DEFEND AGAINST SNOOPERS.
-#DON'T ALTER THEM UNLESS YOU UNDERSTAND THE IMPLICATIONS.
+# THE FOLLOWING SETTINGS ARE REQUIRED TO DEFEND AGAINST SNOOPERS.
+# DON'T ALTER THEM UNLESS YOU UNDERSTAND THE IMPLICATIONS.
 ##############################
 
-# number of retries allowed for a specific utxo, to prevent DOS/snooping.
+# Number of retries allowed for a specific utxo, to prevent DOS/snooping.
 # Lower settings make snooping more expensive, but also prevent honest users
 # from retrying if an error occurs.
 taker_utxo_retries = 3
 
-# number of confirmations required for the commitment utxo mentioned above.
+# Number of confirmations required for the commitment utxo mentioned above.
 # this effectively rate-limits a snooper.
 taker_utxo_age = 5
 
-# percentage of coinjoin amount that the commitment utxo must have
+# Percentage of coinjoin amount that the commitment utxo must have
 # as a minimum BTC amount. Thus 20 means a 1BTC coinjoin requires the
 # utxo to be at least 0.2 btc.
 taker_utxo_amtpercent = 20
 
-#Set to 1 to accept broadcast PoDLE commitments from other bots, and
-#add them to your blacklist (only relevant for Makers).
-#There is no way to spoof these values, so the only "risk" is that
-#someone fills your blacklist file with a lot of data.
+# Set to 1 to accept broadcast PoDLE commitments from other bots, and
+# add them to your blacklist (only relevant for Makers).
+# There is no way to spoof these values, so the only "risk" is that
+# someone fills your blacklist file with a lot of data.
 accept_commitment_broadcasts = 1
 
-#Location of your commitments.json file (stores commitments you've used
-#and those you want to use in future), relative to the scripts directory.
+# Location of your commitments.json file (stores commitments you've used
+# and those you want to use in future), relative to the scripts directory.
 commit_file_location = cmtdata/commitments.json
+
+# Location of the file used by makers to keep track of used/blacklisted
+# commitments. For remote daemon, set to `.` to have it stored locally
+# (but note that *all* bots using the same code installation share it,
+# in this case, which can be bad in testing).
+commitment_list_location = cmtdata/commitmentlist
 
 ##############################
 # END OF ANTI-SNOOPING SETTINGS
 ##############################
 
 [PAYJOIN]
-# for the majority of situations, the defaults
+# For the majority of situations, the defaults
 # need not be altered - they will ensure you don't pay
 # a significantly higher fee.
 # MODIFICATION OF THESE SETTINGS IS DISADVISED.
@@ -379,7 +439,7 @@ commit_file_location = cmtdata/commitments.json
 # Payjoin protocol version; currently only '1' is supported.
 payjoin_version = 1
 
-# servers can change their destination address by default (0).
+# Servers can change their destination address by default (0).
 # if '1', they cannot. Note that servers can explicitly request
 # that this is activated, in which case we respect that choice.
 disable_output_substitution = 0
@@ -395,21 +455,24 @@ disable_output_substitution = 0
 # to that of our change output, unless there is none in which case this is disabled.
 max_additional_fee_contribution = default
 
-# this is the minimum satoshis per vbyte we allow in the payjoin
+# This is the minimum sats/vbyte we allow in the payjoin
 # transaction; note it is decimal, not integer.
 min_fee_rate = 1.1
 
-# for payjoins as sender (i.e. client) to hidden service endpoints,
+# For payjoins as sender (i.e. client) to hidden service endpoints,
 # the socks5 configuration:
 onion_socks5_host = localhost
 onion_socks5_port = 9050
 
-# for payjoin onion service creation:
+# For payjoin onion service creation:
 # the tor control configuration:
 tor_control_host = localhost
+
 # or, to use a UNIX socket
 # control_host = unix:/var/run/tor/control
+# note: port needs to be provided (but is ignored for UNIX socket)
 tor_control_port = 9051
+
 # the host/port actually serving the hidden service
 # (note the *virtual port*, that the client uses,
 # is hardcoded to 80):
@@ -450,23 +513,22 @@ size_factor = 0.1
 gaplimit = 6
 
 [SNICKER]
-
-# any other value than 'true' will be treated as False,
+# Any other value than 'true' will be treated as False,
 # and no SNICKER actions will be enabled in that case:
 enabled = false
 
-# in satoshis, we require any SNICKER to pay us at least
+# In satoshis, we require any SNICKER to pay us at least
 # this much (can be negative), otherwise we will refuse
 # to sign it:
 lowest_net_gain = 0
 
-# comma separated list of servers (if port is omitted as :port, it
+# Comma separated list of servers (if port is omitted as :port, it
 # is assumed to be 80) which we will poll against (all, in sequence); note
 # that they are allowed to be *.onion or cleartext servers, and no
 # scheme (http(s) etc) needs to be added to the start.
 servers = cn5lfwvrswicuxn3gjsxoved6l2gu5hdvwy5l3ev7kg6j7lbji2k7hqd.onion,
 
-# how many minutes between each polling event to each server above:
+# How many minutes between each polling event to each server above:
 polling_interval_minutes = 60
 """
 
@@ -479,7 +541,7 @@ def set_config(cfg, bcint=None):
         global_singleton.bc_interface = bcint
 
 
-def get_irc_mchannels():
+def get_mchannels(mode="TAKER"):
     SECTION_NAME = 'MESSAGING'
     # FIXME: remove in future release
     if jm_single().config.has_section(SECTION_NAME):
@@ -490,34 +552,65 @@ def get_irc_mchannels():
         return _get_irc_mchannels_old()
 
     SECTION_NAME += ':'
-    irc_sections = []
-    for s in jm_single().config.sections():
-        if s.startswith(SECTION_NAME):
-            irc_sections.append(s)
-    assert irc_sections
 
-    req_fields = [("host", str), ("port", int), ("channel", str), ("usessl", str)]
+    irc_fields = [("host", str), ("port", int), ("channel", str), ("usessl", str),
+              ("socks5", str), ("socks5_host", str), ("socks5_port", int)]
+    onion_fields = [("type", str), ("directory_nodes", str), ("regtest_count", str),
+                    ("socks5_host", str), ("socks5_port", int),
+                    ("tor_control_host", str), ("tor_control_port", int),
+                    ("onion_serving_host", str), ("onion_serving_port", int),
+                    ("hidden_service_dir", str)]
 
-    configs = []
-    for section in irc_sections:
+    def get_irc_section(s):
         server_data = {}
-
         # check if socks5 is enabled for tor and load relevant config if so
         try:
-            server_data["socks5"] = jm_single().config.get(section, "socks5")
+            server_data["socks5"] = jm_single().config.get(s, "socks5")
         except NoOptionError:
             server_data["socks5"] = "false"
         if server_data["socks5"].lower() == 'true':
-            server_data["socks5_host"] = jm_single().config.get(section, "socks5_host")
-            server_data["socks5_port"] = jm_single().config.get(section, "socks5_port")
+            server_data["socks5_host"] = jm_single().config.get(s, "socks5_host")
+            server_data["socks5_port"] = jm_single().config.get(s, "socks5_port")
 
-        for option, otype in req_fields:
-            val = jm_single().config.get(section, option)
+        for option, otype in irc_fields:
+            val = jm_single().config.get(s, option)
             server_data[option] = otype(val)
         server_data['btcnet'] = get_network()
-        configs.append(server_data)
-    return configs
+        return server_data
 
+    def get_onion_section(s):
+        onion_data = {}
+        for option, otype in onion_fields:
+            try:
+                val = jm_single().config.get(s, option)
+            except NoOptionError:
+                continue
+            onion_data[option] = otype(val)
+        # the onion messaging section must specify whether
+        # to serve an onion:
+        onion_data["serving"] = mode == "MAKER"
+        onion_data["passive"] = mode == "PASSIVE"
+        onion_data['btcnet'] = get_network()
+        # Just to allow a dynamic set of var:
+        onion_data["section-name"] = s
+        return onion_data
+
+    onion_sections = []
+    irc_sections = []
+    for section in jm_single().config.sections():
+        if not section.startswith(SECTION_NAME):
+            continue
+        if jm_single().config.has_option(section, "type"):
+            channel_type = jm_single().config.get(section, "type").lower()
+            if channel_type == "onion":
+                onion_sections.append(get_onion_section(section))
+            elif channel_type == "irc":
+                irc_sections.append(get_irc_section(section))
+        else:
+            irc_sections.append(get_irc_section(section))
+    assert irc_sections or onion_sections
+    assert len(onion_sections) < 2
+    return irc_sections + onion_sections
 
 def _get_irc_mchannels_old():
     fields = [("host", str), ("port", int), ("channel", str), ("usessl", str),
@@ -646,28 +739,6 @@ def load_program_config(config_path="", bs=None, plugin_services=[]):
               "settings and restart joinmarket.", "info")
         sys.exit(EXIT_FAILURE)
 
-    #These are left as sanity checks but currently impossible
-    #since any edits are overlays to the default, these sections/options will
-    #always exist.
-    # FIXME: This check is a best-effort attempt. Certain incorrect section
-    # names can pass and so can non-first invalid sections.
-    for s in required_options: #pragma: no cover
-        # check for sections
-        avail = None
-        if not global_singleton.config.has_section(s):
-            for avail in global_singleton.config.sections():
-                if avail.startswith(s):
-                    break
-            else:
-                raise Exception(
-                    "Config file does not contain the required section: " + s)
-        # then check for specific options
-        k = avail or s
-        for o in required_options[s]:
-            if not global_singleton.config.has_option(k, o):
-                raise Exception("Config file does not contain the required "
-                                "option '{}' in section '{}'.".format(o, k))
-
     loglevel = global_singleton.config.get("LOGGING", "console_log_level")
     try:
         set_logging_level(loglevel)
@@ -709,6 +780,13 @@ def load_program_config(config_path="", bs=None, plugin_services=[]):
     set_commitment_file(os.path.join(config_path,
                                          global_singleton.commit_file_location))
 
+    if global_singleton.config.get("POLICY", "commitment_list_location") == ".":
+        # Exceptional case as explained in comment in joinmarket.cfg:
+        global_singleton.commitment_list_location = "."
+    else:
+        global_singleton.commitment_list_location = os.path.join(config_path,
+        global_singleton.config.get("POLICY", "commitment_list_location"))
+
     for p in plugin_services:
         # for now, at this config level, the only significance
         # of a "plugin" is that it keeps its own separate log.
@@ -730,6 +808,34 @@ def load_program_config(config_path="", bs=None, plugin_services=[]):
             if not os.path.exists(plogsdir):
                 os.makedirs(plogsdir)
             p.set_log_dir(plogsdir)
+
+def gracefully_kill_subprocess(p):
+    # See https://stackoverflow.com/questions/43274476/is-there-a-way-to-check-if-a-subprocess-is-still-running
+    if p.poll() is None:
+        p.send_signal(SIGINT)
+
+def check_and_start_tor():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex(("127.0.0.1", 9050))
+    sock.close()
+    if result == 0:
+        return
+    log.info("Nobody listens on 127.0.0.1:9050, trying to start Tor.")
+    tor_bin = os.path.join(sys.prefix, "bin", "tor")
+    if not os.path.exists(tor_bin):
+        log.info("Can't find our custom tor.")
+        return
+    command = [tor_bin, "-f", os.path.join(sys.prefix,
+        "etc", "tor", "torrc")]
+    # output messages from tor if loglevel is debug, they might be useful
+    if global_singleton.config.get("LOGGING", "console_log_level") == "DEBUG":
+        tor_stdout = sys.stdout
+    else:
+        tor_stdout = open(os.devnull, 'w')
+    tor_subprocess = subprocess.Popen(command, stdout=tor_stdout,
+        stderr=subprocess.STDOUT, close_fds=True)
+    atexit.register(gracefully_kill_subprocess, tor_subprocess)
+    log.debug("Started Tor subprocess with pid " + str(tor_subprocess.pid))
 
 def load_test_config(**kwargs):
     if "config_path" not in kwargs:

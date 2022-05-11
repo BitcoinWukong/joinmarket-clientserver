@@ -194,6 +194,14 @@ class BitcoinCoreInterface(BlockchainInterface):
             loaded_wallets = self._rpc("listwallets", [])
             if not wallet_name in loaded_wallets:
                 self._rpc("loadwallet", [wallet_name])
+            # We only support legacy wallets currently
+            wallet_info = self._rpc("getwalletinfo", [])
+            if "descriptors" in wallet_info and wallet_info["descriptors"]:
+                raise Exception(
+                    "JoinMarket currently does not support Bitcoin Core "
+                    "descriptor wallets, use legacy wallet (rpc_wallet_file "
+                    "setting in joinmarket.cfg) instead. See docs/USAGE.md "
+                    "for details.")
 
     def is_address_imported(self, addr):
         return len(self._rpc('getaddressinfo', [addr])['labels']) > 0
@@ -292,18 +300,36 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.import_addresses(addresses - imported_addresses, wallet_name)
         return import_needed
 
-    def _yield_transactions(self, wallet_name):
-        batch_size = 1000
-        iteration = 0
+    def _yield_transactions(self):
+        """ Generates a lazily fetched sequence of transactions seen in the
+        wallet (under any label/account), yielded in newest-first order. Care
+        is taken to avoid yielding duplicates even when new transactions are
+        actively being added to the wallet while the iteration is ongoing.
+        """
+        num, skip = 1, 0
+        txs = self.list_transactions(num, skip)
+        if not txs:
+            return
+        yielded_tx = txs[0]
+        yield yielded_tx
         while True:
-            new = self._rpc(
-                'listtransactions',
-                ["*", batch_size, iteration * batch_size, True])
-            for tx in new:
-                yield tx
-            if len(new) < batch_size:
+            num *= 2
+            txs = self.list_transactions(num, skip)
+            if not txs:
                 return
-            iteration += 1
+            try:
+                idx = [(tx['txid'], tx['vout'], tx['category']) for tx in txs
+                        ].index((yielded_tx['txid'], yielded_tx['vout'],
+                        yielded_tx['category']))
+            except ValueError:
+                skip += num
+                continue
+            for tx in reversed(txs[:idx]):
+                yielded_tx = tx  # inefficient but more obvious
+                yield yielded_tx
+            if len(txs) < num:
+                return
+            skip += num - 1
 
     def get_deser_from_gettransaction(self, rpcretval):
         """Get full transaction deserialization from a call
@@ -641,7 +667,7 @@ class BitcoinCoreNoHistoryInterface(BitcoinCoreInterface, RegtestBitcoinCoreMixi
         assert desc_str.startswith("addr(")
         return desc_str[5:desc_str.find(")")]
 
-    def _yield_transactions(self, wallet_name):
+    def _yield_transactions(self):
         for u in self.scan_result["unspents"]:
             tx = {"category": "receive", "address":
                 self._get_addr_from_desc(u["desc"])}

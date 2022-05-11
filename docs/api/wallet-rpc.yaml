@@ -3,6 +3,12 @@ info:
   description: Joinmarket wallet API
   version: "1"
   title: Joinmarket wallet API
+  license:
+    name: GPLv3
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+servers:
+- url: https://none
+  description: This API is called locally to a jmwalletd instance, acting as server, for each wallet owner, it is not public.
 paths:
   /wallet/create:
     post:
@@ -99,12 +105,19 @@ paths:
           $ref: '#/components/responses/404-NotFound'
   /session:
     get:
+      security:
+        - {}
+        - bearerAuth: []
       summary: get current status of backend
       operationId: session
-      description: get whether a wallet is loaded and whether coinjoin/maker are happening.
+      description: get whether a wallet is loaded and whether coinjoin/maker are happening. if an auth token is provided, which is optional, it will be validated.
       responses:
         '200':
           $ref: "#/components/responses/Session-200-OK"
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '404':
+          $ref: '#/components/responses/404-NotFound'
   /wallet/all:
     get:
       summary: get current available wallets
@@ -113,6 +126,22 @@ paths:
       responses:
         '200':
           $ref: "#/components/responses/ListWallets-200-OK"
+        '404':
+          $ref: '#/components/responses/404-NotFound'
+  /wallet/yieldgen/report:
+    get:
+      summary: get latest report on yield generating activity
+      operationId: yieldgenreport
+      description: "Get list of coinjoins taken part in as maker (across all wallets).
+      Data returned as list of strings, each one in the same comma separated format as found in yigen-statement.csv.
+      Note that this returns all lines in the file, including the lines that are only present to represent the starting
+      of a bot. Those lines contain the word Connected and can be thus discarded.
+      The header line is also delivered and so can be ignored as per the client requirements."
+      responses:
+        '200':
+          $ref: "#/components/responses/YieldGenReport-200-OK"
+        '404':
+          $ref: '#/components/responses/404-NotFound'
   /wallet/{walletname}/address/new/{mixdepth}:
     get:
       security:
@@ -319,6 +348,61 @@ paths:
           $ref: '#/components/responses/409-NoConfig'
         '503':
           $ref: '#/components/responses/503-ServiceUnavailable'
+  /wallet/{walletname}/taker/schedule:
+    post:
+      security:
+        - bearerAuth: []
+      summary: create and run a schedule of transactions
+      operationId: runschedule
+      description: Creates and then starts a schedule of transactions.
+      parameters:
+        - name: walletname
+          in: path
+          description: name of wallet including .jmdat
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunScheduleRequest'
+        description: taker side schedule parameters
+      responses:
+        '202':
+          $ref: "#/components/responses/RunSchedule-202-OK"
+        '400':
+          $ref: '#/components/responses/400-BadRequest'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '404':
+          $ref: '#/components/responses/404-NotFound'
+        '409':
+          $ref: '#/components/responses/409-NoConfig'
+        '503':
+          $ref: '#/components/responses/503-ServiceUnavailable'
+    get:
+      security:
+        - bearerAuth: []
+      summary: get the schedule that is currently running
+      operationId: getschedule
+      description: Get the current transaction schedule if one is running.
+      parameters:
+        - name: walletname
+          in: path
+          description: name of the wallet including .jmdat
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: "#/components/responses/GetSchedule-200-OK"
+        '400':
+          $ref: '#/components/responses/400-BadRequest'
+        '401':
+          $ref: "#/components/responses/401-Unauthorized"
+        '404':
+          $ref: '#/components/responses/404-NotFound'
   /wallet/{walletname}/taker/stop:
     get:
       security:
@@ -399,6 +483,31 @@ paths:
           $ref: "#/components/responses/401-Unauthorized"
         '409':
           $ref: '#/components/responses/409-NoConfig'
+  /wallet/{walletname}/freeze:
+    post:
+      security:
+        - bearerAuth: []
+      summary: freeze or unfreeze an individual utxo for spending
+      operationId: freeze
+      description: freeze or unfreeze an individual utxo for spending
+      parameters:
+        - name: walletname
+          in: path
+          description: name of wallet including .jmdat
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FreezeRequest'
+        description: utxo string and freeze toggle as boolean
+      responses:
+        '200':
+          $ref: "#/components/responses/Freeze-200-OK"
+        '400':
+          $ref: '#/components/responses/400-BadRequest'
   /wallet/{walletname}/getseed:
     get:
       security:
@@ -432,6 +541,16 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    FreezeRequest:
+      type: object
+      required:
+        - utxo-string
+        - freeze
+      properties:
+        utxo-string:
+          type: string
+        freeze:
+          type: boolean
     ConfigSetRequest:
       type: object
       required:
@@ -464,6 +583,8 @@ components:
           type: string
     ConfigSetResponse:
       type: object
+    FreezeResponse:
+      type: object
     DoCoinjoinRequest:
       type: object
       required:
@@ -484,7 +605,16 @@ components:
         destination:
           type: string
           example: "bcrt1qujp2x2fv437493sm25gfjycns7d39exjnpptzw"
-            
+    RunScheduleRequest:
+      type: object
+      required:
+        - destinations
+      properties:
+        destinations:
+          type: array
+          items:
+            type: string
+            example: "bcrt1qujp2x2fv437493sm25gfjycns7d39exjnpptzw"
     StartMakerRequest:
       type: object
       required:
@@ -520,6 +650,11 @@ components:
           items:
             type: string
             example: wallet.jmdat
+    YieldGenReportResponse:
+      type: array
+      items:
+        type: string
+        example: "2021/10/26 16:40:21,133986791,1,200000000,2680,2680,0.08,"
     SessionResponse:
       type: object
       required:
@@ -696,6 +831,17 @@ components:
       properties:
         seedphrase:
           type: string
+    GetScheduleResponse:
+      type: object
+      required:
+        - schedule
+      properties:
+        schedule:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
     LockWalletResponse:
       type: object
       required:
@@ -830,10 +976,32 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/GetSeedResponse"
+    Freeze-200-OK:
+      description: "freeze or unfreeze utxo action completed successfully"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FreezeResponse"
+    RunSchedule-202-OK:
+      description: "schedule started successfully"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GetScheduleResponse"
+    GetSchedule-200-OK:
+      description: "schedule retrieved successfully"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GetScheduleResponse"
+    YieldGenReport-200-OK:
+      description: "get list of coinjoins taken part in as maker (across all wallets)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/YieldGenReportResponse"
     202-Accepted:
       description: The request has been submitted successfully for processing, but the processing has not been completed. 
-    204-NoResultFound:
-      description: No result found for matching search criteria.
     # Clientside error responses
     400-BadRequest:
       description: Bad request format.
@@ -877,27 +1045,9 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorMessage'
-    422-UnprocessableEntity:
-      description: Business rule validation failure.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorMessage'
-    429-TooManyRequests:
-      description: There are too many requests in a given amount of time.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorMessage'
     # Serverside error responses
     503-ServiceUnavailable:
       description: The server is not ready to process the request.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorMessage'
-    5XX-UnexpectedError:
-      description: There was an internal issue calling the service.
       content:
         application/json:
           schema:

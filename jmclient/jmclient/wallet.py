@@ -27,7 +27,7 @@ from .support import select_gradual, select_greedy, select_greediest, \
 from .cryptoengine import TYPE_P2PKH, TYPE_P2SH_P2WPKH, TYPE_P2WSH,\
     TYPE_P2WPKH, TYPE_TIMELOCK_P2WSH, TYPE_SEGWIT_WALLET_FIDELITY_BONDS,\
     TYPE_WATCHONLY_FIDELITY_BONDS, TYPE_WATCHONLY_TIMELOCK_P2WSH, TYPE_WATCHONLY_P2WPKH,\
-    ENGINES, detect_script_type
+    ENGINES, detect_script_type, EngineError
 from .support import get_random_bytes
 from . import mn_encode, mn_decode
 import jmbitcoin as btc
@@ -473,8 +473,13 @@ class BaseWallet(object):
         assert False
 
     def get_outtype(self, addr):
-        script_type = detect_script_type(
+        try:
+            script_type = detect_script_type(
             btc.CCoinAddress(addr).to_scriptPubKey())
+        except EngineError:
+            # up to callers what to do with this;
+            # it means we don't recognize this script type.
+            return None
         if script_type == TYPE_P2PKH:
             return 'p2pkh'
         elif script_type == TYPE_P2WPKH:
@@ -483,6 +488,8 @@ class BaseWallet(object):
             return 'p2sh-p2wpkh'
         elif script_type == TYPE_P2WSH:
             return 'p2wsh'
+        # should be unreachable; all possible returns
+        # from detect_script_type are covered.
         assert False
 
     def sign_tx(self, tx, scripts, **kwargs):
@@ -2592,7 +2599,8 @@ class FidelityBondMixin(object):
         t = current_time / YEAR
 
         a = max(0, min(1, exp(r*T) - 1) - min(1, exp(r*max(0, t-L)) - 1))
-        return utxo_value*utxo_value*a*a
+        exponent = float(jm_single().config.get("POLICY", "bond_value_exponent"))
+        return pow(utxo_value*a, exponent)
 
     @classmethod
     def get_validated_timelocked_fidelity_bond_utxo(cls, utxo, utxo_pubkey, locktime,

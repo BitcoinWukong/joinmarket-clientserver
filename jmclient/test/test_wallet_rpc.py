@@ -71,11 +71,11 @@ class WalletRPCTestBase(object):
         # test down from 9 seconds to 1 minute 40s, which is too slow
         # to be acceptable. TODO: add a test with FB by speeding up
         # the sync for test, by some means or other.
-        self.daemon.wallet_service = make_wallets_to_list(make_wallets(
+        self.daemon.services["wallet"] = make_wallets_to_list(make_wallets(
             1, wallet_structures=[wallet_structures[0]],
             mean_amt=self.mean_amt, wallet_cls=SegwitWalletFidelityBonds))[0]
         jm_single().bc_interface.tickchain()
-        sync_wallets([self.daemon.wallet_service])
+        sync_wallets([self.daemon.services["wallet"]])
         # dummy tx example to force a notification event:
         self.test_tx = CTransaction.deserialize(hextobin(test_tx_hex_1))
 
@@ -100,7 +100,8 @@ class WalletRPCTestBase(object):
     def tearDown(self):
         self.clean_out_wallet_files()
         for dc in reactor.getDelayedCalls():
-            dc.cancel()        
+            if not dc.cancelled:
+                dc.cancel()
         d1 = defer.maybeDeferred(self.listener_ws.stopListening)
         d2 = defer.maybeDeferred(self.listener_rpc.stopListening)
         if self.client_connector:
@@ -158,6 +159,27 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         return True
 
     @defer.inlineCallbacks
+    def do_session_request(self, agent, addr, handler=None, token=None):
+        """ A `None` value for handler is reserved for the case
+        where we expect an Unauthorized request because we provided a token,
+        but it is not valid.
+        For other cases, provide the url prefix before `/session' as addr,
+        and we expect a 200 if token is valid *or* token is None, but contents
+        are to be checked by provided response handler callback.
+        """
+        if handler is None:
+            assert token is not None
+            handler = self.unauthorized_session_request_handler
+        yield self.do_request(agent, b"GET", (addr+"/session").encode(),
+                              None, handler, token)
+
+    def authorized_session_request_handler(self, response, code):
+        assert code == 200
+
+    def unauthorized_session_request_handler(self, response, code):
+        assert code == 401
+
+    @defer.inlineCallbacks
     def test_create_list_lock_unlock(self):
         """ A batch of tests in sequence here,
             so we can track the state of a created
@@ -176,7 +198,7 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         """
         # before starting, we have to shut down the existing
         # wallet service (usually this would be `lock`):
-        self.daemon.wallet_service = None
+        self.daemon.services["wallet"] = None
         self.daemon.stopService()
         self.daemon.auth_disabled = False
 
@@ -194,12 +216,26 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         yield self.do_request(agent, b"POST", addr, body,
                               self.process_create_wallet_response)
 
+        # 1a. Session request with valid token; should succeed
+        yield self.do_session_request(agent, root,
+            self.authorized_session_request_handler, token=self.jwt_token)
+        # 1b. Session request without token, even though one is active; should succeed
+        yield self.do_session_request(agent, root,
+            self.authorized_session_request_handler)
+
         # 2. now *lock*
         addr = root + "/wallet/" + wfn1 + "/lock"
         addr = addr.encode()
         jlog.info("Using address: {}".format(addr))
         yield self.do_request(agent, b"GET", addr, None,
                 self.process_lock_response, token=self.jwt_token)
+
+        # 2a. Session request with now invalid token; should fail
+        yield self.do_session_request(agent, root,
+            self.unauthorized_session_request_handler, token=self.jwt_token)
+        # 2b. Session request without token, should still succeed.
+        yield self.do_session_request(agent, root,
+            self.authorized_session_request_handler)
 
         # 3. Create this secondary wallet (so we can test re-unlock)
         addr = root + "/wallet/create"
@@ -268,12 +304,12 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         yield self.do_request(agent, b"POST", addr, body,
                               self.process_direct_send_response)
         # before querying the wallet display, set a label to check:
-        labeladdr = self.daemon.wallet_service.get_addr(0,0,0)
-        self.daemon.wallet_service.set_address_label(labeladdr,
+        labeladdr = self.daemon.services["wallet"].get_addr(0,0,0)
+        self.daemon.services["wallet"].set_address_label(labeladdr,
                                         "test-wallet-rpc-label")
         # force the wallet service txmonitor to wake up, to see the new
         # tx before querying /display:
-        self.daemon.wallet_service.transaction_monitor()
+        self.daemon.services["wallet"].transaction_monitor()
         addr = self.get_route_root()
         addr += "/wallet/"
         addr += self.daemon.wallet_name
@@ -381,16 +417,31 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         assert validate_address(json_body["address"])[0]
 
     @defer.inlineCallbacks
-    def test_listutxos(self):
+    def test_listutxos_and_freeze(self):
         self.daemon.auth_disabled = True
         agent = get_nontor_agent()
-        addr = self.get_route_root()
-        addr += "/wallet/"
-        addr += self.daemon.wallet_name
-        addr += "/utxos"
+        pre_addr = self.get_route_root()
+        pre_addr += "/wallet/"
+        pre_addr += self.daemon.wallet_name
+        addr = pre_addr + "/utxos"
         addr = addr.encode()
         yield self.do_request(agent, b"GET", addr, None,
                               self.process_listutxos_response)
+        # Test of freezing is currently very primitive: we only
+        # check that the action was accepted; a full test would
+        # involve checking that spending the coin works or doesn't
+        # work, as expected.
+        addr = pre_addr + "/freeze"
+        addr = addr.encode()
+        utxostr = self.mixdepth1_utxos[0]["utxo"]
+        body = BytesProducer(json.dumps({"utxo-string": utxostr,
+            "freeze": True}).encode())
+        yield self.do_request(agent, b"POST", addr, body,
+                              self.process_utxo_freeze)
+        body = BytesProducer(json.dumps({"utxo-string": utxostr,
+            "freeze": False}).encode())
+        yield self.do_request(agent, b"POST", addr, body,
+                              self.process_utxo_freeze)
 
     def process_listutxos_response(self, response, code):
         assert code == 200
@@ -399,11 +450,15 @@ class TrialTestWRPC_DisplayWallet(WalletRPCTestBase, unittest.TestCase):
         # have depend on what other tests occurred.
         # For now, we at least check that we have 3 utxos in mixdepth
         # 1 because none of the other tests spend them:
-        mixdepth1_utxos = 0
+        mixdepth1_utxos = []
         for d in json_body["utxos"]:
             if d["mixdepth"] == 1:
-                mixdepth1_utxos += 1
-        assert mixdepth1_utxos == 3
+                mixdepth1_utxos.append(d)
+        assert len(mixdepth1_utxos) == 3
+        self.mixdepth1_utxos = mixdepth1_utxos
+
+    def process_utxo_freeze(self, response, code):
+        assert code == 200
 
     @defer.inlineCallbacks
     def test_session(self):
