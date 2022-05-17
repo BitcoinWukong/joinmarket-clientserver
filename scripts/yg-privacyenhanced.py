@@ -79,35 +79,51 @@ class YieldGeneratorPrivacyEnhanced(YieldGeneratorBasic):
         randomize_maxsize = int(random.uniform(possible_maxsize * (1 - float(self.size_factor)),
                                                possible_maxsize))
 
-        if self.ordertype in ['swabsoffer', 'sw0absoffer']:
-            randomize_cjfee = int(random.uniform(float(self.cjfee_a) * (1 - float(self.cjfee_factor)),
-                                                 float(self.cjfee_a) * (1 + float(self.cjfee_factor))))
-            randomize_cjfee = randomize_cjfee + randomize_txfee
-        else:
-            randomize_cjfee = random.uniform(float(f) * (1 - float(self.cjfee_factor)),
-                                             float(f) * (1 + float(self.cjfee_factor)))
-            randomize_cjfee = "{0:.6f}".format(randomize_cjfee)  # round to 6 decimals
-
-        order = {'oid': 0,
+        # Minimum cj fee: 100,000 * 0.003 = 300
+        # Maximum cj fee: 1,000,000 * 0.003 = 3000
+        order_0 = {'oid': 0,
                  'ordertype': self.ordertype,
-                 'minsize': randomize_minsize,
-                 'maxsize': randomize_maxsize,
-                 'txfee': randomize_txfee,
-                 'cjfee': str(randomize_cjfee)}
+                 'minsize': 100000,
+                 'maxsize': 999999,
+                 'txfee': 0,
+                 'cjfee': '0.003'}
 
-        # sanity check
-        assert order['minsize'] >= jm_single().DUST_THRESHOLD
-        assert order['minsize'] <= order['maxsize']
-        if order['ordertype'] in ['swreloffer', 'sw0reloffer']:
-            for i in range(20):
-                if order['txfee'] < (float(order['cjfee']) * order['minsize']):
-                    break
-                order['txfee'] = int(order['txfee'] / 2)
-                jlog.info('Warning: too high txfee to be profitable, halving it to: ' + str(order['txfee']))
-            else:
-                jlog.error("Tx fee reduction algorithm failed. Quitting.")
-                sys.exit(EXIT_ARGERROR)
-        return [order]
+        # Minimum cj fee: 1,000,000 * 0.001 = 1000
+        # Maximum cj fee: 5,000,000 * 0.001 = 5000
+        order_1 = {'oid': 1,
+                 'ordertype': self.ordertype,
+                 'minsize': 1000000,
+                 'maxsize': 4999999,
+                 'txfee': 0,
+                 'cjfee': '0.001'}
+
+        if randomize_maxsize > 50000000:
+            # Minimum cj fee: 5,000,000 * 0.0002 = 1000
+            # Maximum cj fee: 50,000,000 * 0.0002 = 10000
+            order_2 = {'oid': 2,
+                     'ordertype': self.ordertype,
+                     'minsize': 5000000,
+                     'maxsize': 49999999,
+                     'txfee': 0,
+                     'cjfee': '0.0002'}
+
+            # Minimum cj fee: 50,000,000 * 0.00002 = 1000
+            order_3 = {'oid': 3,
+                     'ordertype': self.ordertype,
+                     'minsize': 50000000,
+                     'maxsize': randomize_maxsize,
+                     'txfee': 0,
+                     'cjfee': '0.00002'}
+            return [order_3, order_2, order_1, order_0]
+        else:
+            # Minimum cj fee: 5,000,000 * 0.0002 = 1000
+            order_2 = {'oid': 2,
+                     'ordertype': self.ordertype,
+                     'minsize': 5000000,
+                     'maxsize': randomize_maxsize,
+                     'txfee': 0,
+                     'cjfee': '0.0002'}
+            return [order_2, order_1, order_0]
 
 
 if __name__ == "__main__":
