@@ -142,10 +142,29 @@ class WalletViewBase(object):
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return sum([x.get_balance() for x in self.children])
 
+    def get_available_balance(self):
+        return sum([x.get_available_balance() for x in self.children])
+
+    def get_balances(self, include_unconf=True):
+        return (self.get_balance(include_unconf=include_unconf),
+                self.get_available_balance())
+
     def get_fmt_balance(self, include_unconf=True):
-        return "{0:.08f}".format(self.get_balance(include_unconf))
+        total_balance, available_balance = self.get_balances(
+            include_unconf=include_unconf)
+        if available_balance != total_balance:
+            return "{0:.08f} ({1:.08f})".format(available_balance, total_balance)
+        else:
+            return "{0:.08f}".format(total_balance)
+
+    def get_fmt_balance_json(self, include_unconf=True):
+        total_balance, available_balance = self.get_balances(
+            include_unconf=include_unconf)
+        return {self.balance_key_name: "{0:.08f}".format(total_balance),
+                "available_balance": "{0:.08f}".format(available_balance)}
 
 class WalletViewEntry(WalletViewBase):
+    balance_key_name = "amount"
     def __init__(self, wallet_path_repr, account, address_type, aindex, addr, amounts,
                  status = 'new', serclass=str, priv=None, custom_separator=None,
                  label=None):
@@ -166,12 +185,21 @@ class WalletViewEntry(WalletViewBase):
         self.status = status
         self.label = label
 
+    def is_locked(self):
+        return "[LOCKED]" in self.status
+
+    def is_frozen(self):
+        return "[FROZEN]" in self.status
+
     def get_balance(self, include_unconf=True):
         """Overwrites base class since no children
         """
         if not include_unconf:
             raise NotImplementedError("Separate conf/unconf balances not impl.")
         return self.unconfirmed_amount/1e8
+
+    def get_available_balance(self, include_unconf=True):
+        return 0 if self.is_locked() or self.is_frozen() else self.get_balance()
 
     def serialize(self):
         left = self.serialize_wallet_position()
@@ -184,12 +212,13 @@ class WalletViewEntry(WalletViewBase):
             left, addr, amounts, status, label, extradata]))
 
     def serialize_json(self):
-        return {"hd_path": self.wallet_path_repr,
+        json_serialized = {"hd_path": self.wallet_path_repr,
                 "address": self.serialize_address(),
-                "amount": self.serialize_amounts(),
                 "status": self.serialize_status(),
                 "label": self.serialize_label(),
                 "extradata": self.serialize_extra_data()}
+        json_serialized.update(self.get_fmt_balance_json())
+        return json_serialized
 
     def serialize_wallet_position(self):
         return self.wallet_path_repr.ljust(20)
@@ -227,6 +256,7 @@ class WalletViewEntryBurnOutput(WalletViewEntry):
         return 0
 
 class WalletViewBranch(WalletViewBase):
+    balance_key_name = "balance"
     def __init__(self, wallet_path_repr, account, address_type, branchentries=None,
                  xpub=None, serclass=str, custom_separator=None):
         super().__init__(wallet_path_repr, children=branchentries,
@@ -254,9 +284,10 @@ class WalletViewBranch(WalletViewBase):
     def serialize_json(self, summarize=False):
         if summarize:
             return {}
-        return {"branch": self.serialize_branch_header(),
-                "balance": self.get_fmt_balance(),
+        json_serialized = {"branch": self.serialize_branch_header(),
          "entries": [x.serialize_json() for x in self.branchentries]}
+        json_serialized.update(self.get_fmt_balance_json())
+        return json_serialized
 
     def serialize_branch_header(self):
         start = "external addresses" if self.address_type == 0 else "internal addresses"
@@ -266,6 +297,7 @@ class WalletViewBranch(WalletViewBase):
                                                   self.xpub]))
 
 class WalletViewAccount(WalletViewBase):
+    balance_key_name = "account_balance"
     def __init__(self, wallet_path_repr, account, branches=None, account_name="mixdepth",
                  serclass=str, custom_separator=None, xpub=None):
         super().__init__(wallet_path_repr, children=branches, serclass=serclass,
@@ -293,14 +325,15 @@ class WalletViewAccount(WalletViewBase):
                 x.serialize(entryseparator) for x in self.branches] + [footer]))
 
     def serialize_json(self, summarize=False):
-        result = {"account": str(self.account),
-                    "account_balance": self.get_fmt_balance()}
+        json_serialized = {"account": str(self.account)}
+        json_serialized.update(self.get_fmt_balance_json())
         if summarize:
-            return result
-        result["branches"] = [x.serialize_json() for x in self.branches]
-        return result
+            return json_serialized
+        json_serialized["branches"] = [x.serialize_json() for x in self.branches]
+        return json_serialized
 
 class WalletView(WalletViewBase):
+    balance_key_name = "total_balance"
     def __init__(self, wallet_path_repr, accounts, wallet_name="JM wallet",
                  serclass=str, custom_separator=None):
         super().__init__(wallet_path_repr, children=accounts, serclass=serclass,
@@ -324,9 +357,10 @@ class WalletView(WalletViewBase):
                 x.serialize(entryseparator, summarize=False) for x in self.accounts] + [footer]))
 
     def serialize_json(self, summarize=False):
-        return {"wallet_name": self.wallet_name,
-                "total_balance": self.get_fmt_balance(),
+        json_serialized = {"wallet_name": self.wallet_name,
                 "accounts": [x.serialize_json(summarize=summarize) for x in self.accounts]}
+        json_serialized.update(self.get_fmt_balance_json())
+        return json_serialized
 
 def get_tx_info(txid, tx_cache=None):
     """
@@ -435,6 +469,22 @@ def wallet_showutxos(wallet_service, showprivkey):
 
     return json.dumps(unsp, indent=4, ensure_ascii=False)
 
+def get_utxo_status_string(utxos, utxos_enabled, path):
+    has_frozen_utxo = False
+    has_pending_utxo = False
+    for utxo, utxodata in utxos.items():
+        if path == utxodata["path"]:
+            if not utxo in utxos_enabled:
+                has_frozen_utxo = True
+            if utxodata['confs'] <= 0:
+                has_pending_utxo = True
+
+    utxo_status_string = ""
+    if has_frozen_utxo:
+        utxo_status_string += ' [FROZEN]'
+    if has_pending_utxo:
+        utxo_status_string += ' [PENDING]'
+    return utxo_status_string
 
 def wallet_display(wallet_service, showprivkey, displayall=False,
         serialized=True, summarized=False, mixdepth=None, jsonified=False):
@@ -442,13 +492,15 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
     then return its serialization directly if serialized,
     else return the WalletView object.
     """
-    def get_addr_status(addr_path, utxos, is_new, is_internal):
+    def get_addr_status(addr_path, utxos, utxos_enabled, is_new, is_internal):
         addr_balance = 0
         status = []
+
         for utxo, utxodata in utxos.items():
             if addr_path != utxodata['path']:
                 continue
             addr_balance += utxodata['value']
+
             #TODO it is a failure of abstraction here that
             # the bitcoin core interface is used directly
             #the function should either be removed or added to bci
@@ -472,12 +524,15 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
         elif len(status) == 1:
             out_status = status[0]
 
+        out_status += get_utxo_status_string(utxos, utxos_enabled, addr_path)
+
         return addr_balance, out_status
 
     acctlist = []
-    # TODO - either optionally not show disabled utxos, or
-    # mark them differently in display (labels; colors)
-    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True)
+
+    utxos = wallet_service.get_utxos_by_mixdepth(include_disabled=True, includeconfs=True)
+    utxos_enabled = wallet_service.get_utxos_by_mixdepth()
+
     if mixdepth:
         md_range = range(mixdepth, mixdepth + 1)
     else:
@@ -502,7 +557,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
                     gap_addrs.append(addr)
                 label = wallet_service.get_address_label(addr)
                 balance, status = get_addr_status(
-                    path, utxos[m], k >= unused_index, address_type)
+                    path, utxos[m], utxos_enabled[m], k >= unused_index, address_type)
                 if showprivkey:
                     privkey = wallet_service.get_wif_path(path)
                 else:
@@ -536,10 +591,13 @@ def wallet_display(wallet_service, showprivkey, displayall=False,
                 label = wallet_service.get_address_label(addr)
                 timelock = datetime.utcfromtimestamp(0) + timedelta(seconds=path[-1])
 
-                balance = sum([utxodata["value"] for utxo, utxodata in
+                balance = sum([utxodata["value"] for _, utxodata in 
                     utxos[m].items() if path == utxodata["path"]])
+
                 status = timelock.strftime("%Y-%m-%d") + " [" + (
                     "LOCKED" if datetime.now() < timelock else "UNLOCKED") + "]"
+                status += get_utxo_status_string(utxos[m], utxos_enabled[m], path)
+                
                 privkey = ""
                 if showprivkey:
                     privkey = wallet_service.get_wif_path(path)

@@ -2,14 +2,14 @@ from setuptools import setup
 
 
 setup(name='joinmarketbase',
-      version='0.9.6',
+      version='0.9.7dev',
       description='Joinmarket client library for Bitcoin coinjoins',
       url='https://github.com/JoinMarket-Org/joinmarket-clientserver/tree/master/jmbase',
       author='',
       author_email='',
       license='GPL',
       packages=['jmbase'],
-      install_requires=['twisted==22.2.0', 'service-identity',
+      install_requires=['twisted==22.4.0', 'service-identity',
                         'chromalog==1.0.5'],
       python_requires='>=3.6',
       zip_safe=False)

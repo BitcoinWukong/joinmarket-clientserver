@@ -53,7 +53,7 @@ qt5reactor.install()
 donation_address_url = "https://bitcoinprivacy.me/joinmarket-donations"
 
 #Version of this Qt script specifically
-JM_GUI_VERSION = '28'
+JM_GUI_VERSION = '29dev'
 
 from jmbase import get_log, stop_reactor, set_custom_stop_reactor
 from jmbase.support import EXIT_FAILURE, utxo_to_utxostr,\
@@ -1479,11 +1479,13 @@ class JMWalletTab(QWidget):
             # Show QR code option only for new addresses to avoid address reuse
             if item.text(3) == "new":
                 menu.addAction("Show QR code",
-                               lambda: self.openQRCodePopup(txt))
+                               lambda: self.openAddressQRCodePopup(txt))
         if xpub_exists:
             menu.addAction("Copy extended public key to clipboard",
                            lambda: app.clipboard().setText(xpub),
                            shortcut=QKeySequence(QKeySequence.Copy))
+            menu.addAction("Show QR code",
+                               lambda: self.openQRCodePopup(xpub, xpub))
         menu.addAction("Refresh wallet",
                        lambda: mainWindow.updateWalletInfo(None, "all"),
                        shortcut=QKeySequence(QKeySequence.Refresh))
@@ -1491,7 +1493,11 @@ class JMWalletTab(QWidget):
         #TODO add more items to context menu
         menu.exec_(self.walletTree.viewport().mapToGlobal(position))
 
-    def openQRCodePopup(self, address):
+    def openQRCodePopup(self, title, data):
+        popup = QRCodePopup(self, title, data)
+        popup.show()
+
+    def openAddressQRCodePopup(self, address):
         bip21_uri = btc.encode_bip21_uri(address, {})
         # From BIP173 (bech32) spec:
         #   For presentation, lowercase is usually preferable, but inside
@@ -1502,8 +1508,7 @@ class JMWalletTab(QWidget):
         # encoded in QR code to uppercase, if possible.
         if detect_script_type(mainWindow.wallet_service.addr_to_script(address)) == TYPE_P2WPKH:
             bip21_uri = bip21_uri.upper()
-        popup = QRCodePopup(self, address, bip21_uri)
-        popup.show()
+        self.openQRCodePopup(address, bip21_uri)
 
     def updateWalletInfo(self, walletinfo=None):
         max_mixdepth_count = jm_single().config.getint("GUI", "max_mix_depth")
@@ -1551,9 +1556,8 @@ class JMWalletTab(QWidget):
             # if expansion states existed, reinstate them:
             if len(previous_expand_states) == max_mixdepth_count:
                 m_item.setExpanded(previous_expand_states[mixdepth][0])
-            # by default, if the mixdepth is 0 or balance of the mixdepth is
-            # greater than 0, expand it
-            elif mixdepth == 0 or float(mdbalance) > 0:
+            # we expand at the mixdepth level by default
+            else:
                 m_item.setExpanded(True)
 
             for address_type in [
