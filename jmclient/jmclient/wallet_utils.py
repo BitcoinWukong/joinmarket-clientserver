@@ -152,10 +152,10 @@ class WalletViewBase(object):
         return sum([x.get_available_balance() for x in self.children])
 
     def get_fmt_balance(self, include_unconf=True):
-        unavailable_balance = self.get_available_balance()
+        available_balance = self.get_available_balance()
         total_balance = self.get_balance(include_unconf)
-        if unavailable_balance != total_balance:
-            return "{0:.08f} ({1:.08f})".format(unavailable_balance, total_balance)
+        if available_balance != total_balance:
+            return "{0:.08f} ({1:.08f})".format(available_balance, total_balance)
         else:
             return "{0:.08f}".format(total_balance)
 
@@ -458,6 +458,22 @@ def wallet_showutxos(wallet_service, showprivkey):
 
     return json.dumps(unsp, indent=4, ensure_ascii=False)
 
+def get_utxo_status_string(utxos, utxos_enabled, path):
+    has_frozen_utxo = False
+    has_pending_utxo = False
+    for utxo, utxodata in utxos.items():
+        if path == utxodata["path"]:
+            if not utxo in utxos_enabled:
+                has_frozen_utxo = True
+            if utxodata['confs'] <= 0:
+                has_pending_utxo = True
+
+    utxo_status_string = ""
+    if has_frozen_utxo:
+        utxo_status_string += ' [FROZEN]'
+    if has_pending_utxo:
+        utxo_status_string += ' [PENDING]'
+    return utxo_status_string
 
 def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=False,
         serialized=True, summarized=False, mixdepth=None, jsonified=False):
@@ -468,16 +484,10 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
     def get_addr_status(addr_path, utxos, utxos_enabled, is_new, is_internal):
         addr_balance = 0
         status = []
-        has_frozen_utxo = False
-        has_pending_utxo = False
         for utxo, utxodata in utxos.items():
             if addr_path != utxodata['path']:
                 continue
             addr_balance += utxodata['value']
-            if utxo not in utxos_enabled:
-                has_frozen_utxo = True
-            if utxodata['confs'] <= 0:
-                has_pending_utxo = True
 
             #TODO it is a failure of abstraction here that
             # the bitcoin core interface is used directly
@@ -502,10 +512,7 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
         elif len(status) == 1:
             out_status = status[0]
 
-        if has_frozen_utxo:
-            out_status += ' [FROZEN]'
-        if has_pending_utxo:
-            out_status += ' [PENDING]'
+        out_status += get_utxo_status_string(utxos, utxos_enabled, addr_path)
 
         return addr_balance, out_status
 
@@ -572,24 +579,13 @@ def wallet_display(wallet_service, showprivkey, displayall=False, hidenewaddr=Fa
                 label = wallet_service.get_address_label(addr)
                 timelock = datetime.utcfromtimestamp(0) + timedelta(seconds=path[-1])
 
-                balance = 0
-                has_frozen_utxo = False
-                has_pending_utxo = False
-                for utxo, utxodata in utxos[m].items():
-                    if path == utxodata["path"]:
-                        balance += utxodata["value"]
-                        if not utxo in utxos_enabled[m]:
-                            has_frozen_utxo = True
-                        if utxodata['confs'] <= 0:
-                            has_pending_utxo = True
+                balance = sum([utxodata["value"] for _, utxodata in
+                    utxos[m].items() if path == utxodata["path"]])
 
                 status = timelock.strftime("%Y-%m-%d") + " [" + (
                     "LOCKED" if datetime.now() < timelock else "UNLOCKED") + "]"
-                if has_frozen_utxo:
-                    status += ' [FROZEN]'
-                if has_pending_utxo:
-                    status += ' [PENDING]'
-                
+                status += get_utxo_status_string(utxos[m], utxos_enabled[m], path)
+
                 privkey = ""
                 if showprivkey:
                     privkey = wallet_service.get_wif_path(path)
